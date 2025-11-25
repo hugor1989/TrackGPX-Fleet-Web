@@ -1,17 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { View, useWindowDimensions } from "react-native";
 import Sidebar from "./Sidebar";
-import Navbar from "./Navbar";
 
-export default function DashboardLayout({ children }) {
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { width } = useWindowDimensions();
-  const isWeb = width >= 768; // md breakpoint
+  const isWeb = width >= 768;
   const [selected, setSelected] = useState("Sistema");
-
-  // Sidebar abierto por defecto EN WEB, cerrado por defecto EN MOBILE
   const [sidebarOpen, setSidebarOpen] = useState(isWeb);
 
-  // Al cambiar de tamaño (ej. redimensionar ventana), cambia el default automáticamente
   useEffect(() => {
     setSidebarOpen(isWeb);
   }, [isWeb]);
@@ -27,9 +23,9 @@ export default function DashboardLayout({ children }) {
         setOpen={setSidebarOpen}
         alwaysVisible={isWeb}
       />
+      {/* Contenido principal SIN navbar */}
       <View className="flex-1">
-        <Navbar user="Demo" toggleSidebar={toggleSidebar} isWeb={isWeb} />
-        <View className="p-2 md:p-6">{children}</View>
+        {children}
       </View>
     </View>
   );
