@@ -320,13 +320,13 @@ export default function DashboardPage() {
 
   return (
     <DashboardLayout>
-      <View style={styles.container}>
+      <View style={[styles.container, { position: 'absolute', width: '100%', height: '100%' }]}>
         <View style={styles.mainContent}>
           {/* Mapa - Ocupa todo el fondo */}
-          <View style={styles.mapContainer}>
+          <View style={[styles.mapContainer, { backgroundColor: 'red' }]}>
             <RealMap 
               vehicles={filteredVehicles} 
-              style={{ flex: 1, width: '100%', height: '100%' }} 
+              style={{ flex: 1, width: '100%', height: '100%', backgroundColor: 'blue' }} 
             />
           </View>
 
@@ -530,7 +530,7 @@ const VehicleItem: React.FC<VehicleItemProps> = React.memo(({ vehicle, onPress }
 VehicleItem.displayName = 'VehicleItem';
 
 const styles = StyleSheet.create({
-  container: {
+container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
@@ -546,6 +546,8 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: '100%',
     height: '100%',
+    zIndex: 0,
+    backgroundColor: '#e8f4f8', // ← Agrega esto para ver si al menos el fondo se ve
   },
   sidePanel: {
     position: 'absolute',
@@ -560,6 +562,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 10,
     overflow: 'hidden',
+    zIndex: 1000, // ← Cambia de 10 a 1000
   },
   panelToggleButton: {
     position: 'absolute',
@@ -570,7 +573,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 1001,
+    zIndex: 2000, // ← Cambia de 1001 a 2000
     elevation: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },

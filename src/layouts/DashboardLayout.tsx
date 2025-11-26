@@ -24,7 +24,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         alwaysVisible={isWeb}
       />
       {/* Contenido principal SIN navbar */}
-      <View className="flex-1">
+      <View style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {children}
       </View>
     </View>

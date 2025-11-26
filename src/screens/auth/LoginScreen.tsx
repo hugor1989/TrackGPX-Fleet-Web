@@ -1,8 +1,8 @@
 // src/screens/auth/LoginScreen.tsx
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, TextInput, Image, TouchableOpacity, Platform, StyleSheet, ActivityIndicator } from "react-native";
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, CommonActions } from '@react-navigation/native';
 import authService from '../../api/authService';
 
 export default function LoginScreen() {
@@ -48,6 +48,12 @@ export default function LoginScreen() {
       if (response.success) {
         // Login exitoso - navegar al dashboard
         navigation.navigate('Dashboard' as never);
+        /* navigation.dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [{ name: 'Dashboard' }],
+          })
+        ); */
       } else {
         // Mostrar error del servidor
         setError(response.message || 'Credenciales incorrectas');
@@ -60,10 +66,15 @@ export default function LoginScreen() {
     }
   };
 
-  const handleForgotPassword = () => {
-    // TODO: Navegar a pantalla de recuperación
-    console.log('Forgot password clicked');
-  };
+  const handleForgotPassword = useCallback(() => {
+    console.log('🔄 Navegando a ForgotPassword...');
+    navigation.navigate('ForgotPassword' as never);
+  }, [navigation]);
+
+  const handleRegister = useCallback(() => {
+    console.log('🔄 Navegando a Register...');
+    navigation.navigate('Register' as never);
+  }, [navigation]);
 
   return (
     <View style={styles.container}>
@@ -97,7 +108,7 @@ export default function LoginScreen() {
           <View style={styles.inputContainer}>
             <Text style={styles.inputIcon}>👤</Text>
             <TextInput
-              placeholder="Account/IMEI"
+              placeholder="Email"
               placeholderTextColor="#71717a"
               style={styles.input}
               value={account}
@@ -157,6 +168,17 @@ export default function LoginScreen() {
             <Text style={styles.loginButtonText}>Login</Text>
           )}
         </TouchableOpacity>
+
+        {/* Link de registro */}
+        <View style={styles.registerContainer}>
+          <Text style={styles.registerText}>¿No tienes cuenta? </Text>
+          <TouchableOpacity 
+            onPress={handleRegister}
+            disabled={loading}
+          >
+            <Text style={styles.registerLink}>Regístrate</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Botones de plataforma - Separados del card */}
@@ -345,6 +367,20 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     letterSpacing: 0.5,
+  },
+  registerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  registerText: {
+    color: '#6b7280',
+    fontSize: 14,
+  },
+  registerLink: {
+    color: '#226bfc',
+    fontSize: 14,
+    fontWeight: '600',
   },
   platformSection: {
     marginTop: 20,

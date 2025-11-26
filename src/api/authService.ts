@@ -68,7 +68,6 @@ class AuthService {
         password: credentials.password,
       });
 
-      console.log('Login response:', response);
       if (response.token && response.user) {
         await AsyncStorage.setItem('auth_token', response.token);
         await AsyncStorage.setItem('user_data', JSON.stringify(response.user));
