@@ -12,6 +12,7 @@ import {
   ScrollView
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { useNavigation } from '@react-navigation/native';
 
 // ============= TIPOS =============
 interface FleetStats {
@@ -56,6 +57,7 @@ interface SubMenuItem {
   key: string;
   label: string;
   badge?: number | string;
+  screen?: string;
 }
 
 interface MenuItem {
@@ -67,6 +69,7 @@ interface MenuItem {
   badgeType?: 'info' | 'warning' | 'danger';
   pulse?: boolean;
   subItems?: SubMenuItem[];
+  screen?: string;
 }
 
 interface SidebarProps {
@@ -134,6 +137,7 @@ export default function FleetSidebar({
   onModeChange,
 }: SidebarProps) {
   // Estados
+  const navigation = useNavigation();
   const [currentMode, setCurrentMode] = useState<'normal' | 'compact' | 'collapsed'>(mode);
   const [sidebarWidth, setSidebarWidth] = useState(THEME.sizes[currentMode]);
   const [sidebarAnimation] = useState(new Animated.Value(sidebarWidth));
@@ -220,9 +224,16 @@ export default function FleetSidebar({
         { key: "Facturacion-MisSuscripciones", label: "Mis Suscripciones" },
         { key: "Facturacion-SolicitarFactura", label: "Solicitar Factura" },
         { key: "Facturacion-Historial", label: "Historial de Facturas" },
-        { key: "Facturacion-MetodosPago", label: "Métodos de Pago" },
+        { key: "Facturacion-MetodosPago", label: "Métodos de Pago", screen: "PaymentMethods" },
         { key: "Facturacion-DatosFiscales", label: "Datos Fiscales" },
       ]
+    },
+    { 
+      key: "Planes", 
+      label: "Planes y Precios", 
+      icon: "pricetags-outline",
+      iconType: 'Ionicons',
+      screen: "PlanList"
     },
     { 
       key: "Multas", 
@@ -239,7 +250,7 @@ export default function FleetSidebar({
         { key: "Multas-Tenencias", label: "Tenencias" },
       ]
     },
-    { 
+   /*  { 
       key: "Mantenimiento", 
       label: "Mantenimiento", 
       icon: "construct-outline",
@@ -250,7 +261,7 @@ export default function FleetSidebar({
         { key: "Mantenimiento-Proveedores", label: "Proveedores" },
         { key: "Mantenimiento-Costos", label: "Costos" },
       ]
-    },
+    }, */
     { 
       key: "Reportes", 
       label: "Reportes", 
@@ -270,11 +281,10 @@ export default function FleetSidebar({
       icon: "settings-outline",
       iconType: 'Ionicons',
       subItems: [
-        { key: "Config-Empresa", label: "Mi Empresa" },
-        { key: "Config-Usuarios", label: "Usuarios y Roles" },
+        { key: "Config-Empresa", label: "Mi Empresa", screen: "CompanyInfo" },
+        { key: "Config-Usuarios", label: "Usuarios y Roles" , screen: "TeamScreen" },
         { key: "Config-Vehiculos", label: "Vehículos" },
-        { key: "Config-Dispositivos", label: "Dispositivos GPS" },
-        { key: "Config-Integraciones", label: "Integraciones" },
+        { key: "Config-Dispositivos", label: "Dispositivos GPS", screen: "ActivateDevice" },
       ]
     },
     { 
@@ -284,9 +294,7 @@ export default function FleetSidebar({
       iconType: 'Ionicons',
       subItems: [
         { key: "Ayuda-Guias", label: "Guías" },
-        { key: "Ayuda-Videos", label: "Videotutoriales" },
         { key: "Ayuda-Soporte", label: "Contactar Soporte" },
-        { key: "Ayuda-Changelog", label: "Novedades" },
       ]
     },
   ], [fleetStats]);
@@ -551,7 +559,10 @@ export default function FleetSidebar({
                       isCollapsed && styles.menuItemCollapsed,
                     ]}
                     onPress={() => {
-                      if (hasSubmenu && !isCollapsed) {
+                      if (item.screen && !hasSubmenu) {
+                        navigation.navigate(item.screen as never);
+                        onMenuSelect(item.key);
+                      } else if (hasSubmenu && !isCollapsed) {
                         toggleSubmenu(item.key);
                       } else {
                         onMenuSelect(item.key);
@@ -604,7 +615,12 @@ export default function FleetSidebar({
                               styles.submenuItem,
                               isSubActive && styles.submenuItemActive,
                             ]}
-                            onPress={() => onMenuSelect(subItem.key)}
+                            onPress={() => {
+                              if (subItem.screen) {
+                                navigation.navigate(subItem.screen as never);
+                              }
+                              onMenuSelect(subItem.key);
+                            }}
                           >
                             <View style={styles.submenuDot} />
                             <Text style={[
