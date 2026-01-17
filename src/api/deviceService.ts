@@ -56,7 +56,7 @@ class DeviceService {
    */
   async getDevices(): Promise<Device[]> {
     try {
-      const response = await apiClient.get<{ success: boolean; data: Device[] }>('/devices');
+      const response = await apiClient.get<{ success: boolean; data: Device[] }>('/billing/devices/devices-sinasignar');
       return response.data || response || [];
     } catch (error: any) {
       console.error('❌ Error getting devices:', error);

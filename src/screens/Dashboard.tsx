@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, Animated, TextInput } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, 
+         StyleSheet, Dimensions, Animated, TextInput } from 'react-native';
 import DashboardLayout from '../layouts/DashboardLayout';
+import MainLayout from '../layouts/MainLayout'; // Asegúrate que la ruta sea correcta hacia el archivo que subiste
 import RealMap from '../components/RealMap';
 import { Ionicons } from "@expo/vector-icons";
 
@@ -319,7 +321,7 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <DashboardLayout>
+    <MainLayout activeMenu="Dashboard">
       <View style={styles.container}>
         <View style={styles.mainContent}>
           {/* Mapa - Ocupa todo el fondo */}
@@ -504,7 +506,7 @@ export default function DashboardPage() {
           </Animated.View>
         </View>
       </View>
-    </DashboardLayout>
+    </MainLayout>
   );
 }
 

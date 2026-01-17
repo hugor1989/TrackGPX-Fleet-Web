@@ -221,20 +221,20 @@ export default function FleetSidebar({
       icon: "receipt-outline",
       iconType: 'Ionicons',
       subItems: [
-        { key: "Facturacion-MisSuscripciones", label: "Mis Suscripciones" },
-        { key: "Facturacion-SolicitarFactura", label: "Solicitar Factura" },
-        { key: "Facturacion-Historial", label: "Historial de Facturas" },
+        { key: "Facturacion-MisSuscripciones", label: "Mis Suscripciones", screen: "Subscriptions" },
+        { key: "Facturacion-SolicitarFactura", label: "Solicitar Factura", screen: "RequestInvoice" },
+        { key: "Facturacion-Historial", label: "Historial de Facturas", screen: "InvoiceHistory" },
         { key: "Facturacion-MetodosPago", label: "Métodos de Pago", screen: "PaymentMethods" },
-        { key: "Facturacion-DatosFiscales", label: "Datos Fiscales" },
+        { key: "Facturacion-DatosFiscales", label: "Datos Fiscales", screen: "BillingInfo" },
       ]
     },
-    { 
+    /* { 
       key: "Planes", 
       label: "Planes y Precios", 
       icon: "pricetags-outline",
       iconType: 'Ionicons',
       screen: "PlanList"
-    },
+    }, */
     { 
       key: "Multas", 
       label: "Multas y Verificaciones", 
@@ -243,6 +243,7 @@ export default function FleetSidebar({
       badge: 2,
       badgeType: 'warning',
       subItems: [
+        
         { key: "Multas-Consultar", label: "Consultar Multas" },
         { key: "Multas-Pendientes", label: "Pendientes de Pago", badge: 2 },
         { key: "Multas-Historial", label: "Historial" },
@@ -283,7 +284,7 @@ export default function FleetSidebar({
       subItems: [
         { key: "Config-Empresa", label: "Mi Empresa", screen: "CompanyInfo" },
         { key: "Config-Usuarios", label: "Usuarios y Roles" , screen: "TeamScreen" },
-        { key: "Config-Vehiculos", label: "Vehículos" },
+        { key: "Config-Vehiculos", label: "Vehículos", screen: "VehiclesList" },
         { key: "Config-Dispositivos", label: "Dispositivos GPS", screen: "ActivateDevice" },
       ]
     },
@@ -673,12 +674,22 @@ export default function FleetSidebar({
                 )}
               </TouchableOpacity>
 
-              {onLogout && !isCollapsed && (
+              {/* 🟢 PON ESTO: */}
+              {onLogout && (
                 <TouchableOpacity 
-                  style={styles.logoutButton}
+                  style={[
+                    styles.logoutButton,
+                    // Si está colapsado, centramos el icono
+                    isCollapsed && { justifyContent: 'center', marginTop: 10 } 
+                  ]}
                   onPress={onLogout}
                 >
-                  <Ionicons name="log-out-outline" size={20} color={THEME.colors.text} />
+                  <Ionicons 
+                    name="log-out-outline" 
+                    size={20} 
+                    // Sugerencia: Ponerlo en rojo para que destaque como acción de salida
+                    color={THEME.colors.danger} 
+                  />
                 </TouchableOpacity>
               )}
             </View>

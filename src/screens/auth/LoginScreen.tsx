@@ -1,36 +1,44 @@
-// src/screens/auth/LoginScreen.tsx
-
 import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, Image, TouchableOpacity, Platform, StyleSheet, ActivityIndicator } from "react-native";
-import { useNavigation } from '@react-navigation/native';
-import authService from '../../api/authService';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  Image, 
+  TouchableOpacity, 
+  Platform, 
+  StyleSheet, 
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  ScrollView
+} from "react-native";
+// import { useNavigation } from '@react-navigation/native'; // ❌ Ya no es necesario para ir al Dashboard
+import { useAuth } from '../../context/AuthContext'; // ✅ Usamos el Hook
+import authService from '../../api/authService'; // Solo para leer el email guardado
 
 export default function LoginScreen() {
+  const { login } = useAuth(); // Obtenemos la función login del contexto global
+  
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const navigation = useNavigation();
 
-  // Cargar email guardado si existe (remember me)
+  // Cargar email guardado si existe (solo al montar)
   useEffect(() => {
+    const loadSavedEmail = async () => {
+      const savedEmail = await authService.getSavedEmail();
+      if (savedEmail) {
+        setAccount(savedEmail);
+        setRemember(true);
+      }
+    };
     loadSavedEmail();
   }, []);
 
-  const loadSavedEmail = async () => {
-    const savedEmail = await authService.getSavedEmail();
-    if (savedEmail) {
-      setAccount(savedEmail);
-      setRemember(true);
-    }
-  };
-
   const handleLogin = async () => {
-    // Limpiar errores previos
+    // 1. Limpieza y Validación
     setError("");
-
-    // Validaciones básicas
     if (!account || !password) {
       setError("Por favor ingresa tu cuenta y contraseña");
       return;
@@ -39,146 +47,135 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
-      const response = await authService.login({
+      // 2. Llamada al Contexto (El contexto se encarga de hablar con la API y guardar el token)
+      const result = await login({
         email: account,
         password: password,
         remember: remember,
       });
 
-      if (response.success) {
-        // Login exitoso - navegar al dashboard
-        navigation.navigate('Dashboard' as never);
-      } else {
-        // Mostrar error del servidor
-        setError(response.message || 'Credenciales incorrectas');
+      if (!result.success) {
+        // Solo mostramos error si falla. 
+        // Si tiene éxito, el Contexto actualiza el estado 'user' y 
+        // el Navegador (App.tsx) cambiará automáticamente de pantalla.
+        setError(result.message || 'Credenciales incorrectas');
       }
-    } catch (err: any) {
-      console.error('Login error:', err);
-      setError('Error de conexión. Por favor intenta de nuevo.');
+      
+    } catch (err) {
+      setError('Ocurrió un error inesperado');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleForgotPassword = () => {
-    // TODO: Navegar a pantalla de recuperación
-    console.log('Forgot password clicked');
-  };
-
   return (
-    <View style={styles.container}>
-      <Image
-        source={{ uri: "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?auto=format&fit=crop&w=1200&q=80" }}
-        style={styles.backgroundImage}
-        resizeMode="cover"
-        blurRadius={Platform.OS === "web" ? 0 : 20}
-      />
-
-      {/* Card de Login */}
-      <View style={styles.loginCard}>
-        {/* Logo */}
-        <View style={styles.logoContainer}>
+    // KeyboardAvoidingView ayuda a que el teclado no tape los inputs en móviles
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={{ flex: 1 }}
+    >
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+        <View style={styles.container}>
           <Image
-            source={require("../../../assets/logo-sin-fondo.png")}
-            style={styles.logoImage}
+            source={{ uri: "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?auto=format&fit=crop&w=1200&q=80" }}
+            style={styles.backgroundImage}
+            resizeMode="cover"
+            blurRadius={Platform.OS === "web" ? 0 : 3} // Un poco menos de blur se ve mejor a veces
           />
-        </View>
 
-        {/* Mensaje de error */}
-        {error ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorIcon}>⚠️</Text>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null}
+          {/* Card de Login */}
+          <View style={styles.loginCard}>
+            {/* Logo */}
+            <View style={styles.logoContainer}>
+              {/* Asegúrate de que la ruta sea correcta */}
+              <Image
+                source={require("../../../assets/logo-sin-fondo.png")}
+                style={styles.logoImage}
+              />
+            </View>
 
-        {/* Inputs */}
-        <View style={styles.inputsContainer}>
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputIcon}>👤</Text>
-            <TextInput
-              placeholder="Account/IMEI"
-              placeholderTextColor="#71717a"
-              style={styles.input}
-              value={account}
-              onChangeText={setAccount}
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!loading}
-            />
-          </View>
-          
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputIcon}>🔒</Text>
-            <TextInput
-              placeholder="Please enter password"
-              placeholderTextColor="#71717a"
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!loading}
-            />
-          </View>
-          
-          <View style={styles.rememberContainer}>
-            <TouchableOpacity 
-              onPress={() => setRemember(!remember)} 
-              style={styles.rememberButton}
-              disabled={loading}
-            >
-              <View style={[styles.checkbox, remember && styles.checkboxChecked]}>
-                {remember && <Text style={styles.checkmark}>✓</Text>}
+            {/* Mensaje de error */}
+            {error ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorIcon}>⚠️</Text>
+                <Text style={styles.errorText}>{error}</Text>
               </View>
-              <Text style={styles.rememberText}>Remember password</Text>
-            </TouchableOpacity>
-            
+            ) : null}
+
+            {/* Inputs */}
+            <View style={styles.inputsContainer}>
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputIcon}>👤</Text>
+                <TextInput
+                  placeholder="Usuario / Correo"
+                  placeholderTextColor="#71717a"
+                  style={styles.input}
+                  value={account}
+                  onChangeText={setAccount}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!loading}
+                />
+              </View>
+              
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputIcon}>🔒</Text>
+                <TextInput
+                  placeholder="Contraseña"
+                  placeholderTextColor="#71717a"
+                  style={styles.input}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!loading}
+                />
+              </View>
+              
+              <View style={styles.rememberContainer}>
+                <TouchableOpacity 
+                  onPress={() => setRemember(!remember)} 
+                  style={styles.rememberButton}
+                  disabled={loading}
+                >
+                  <View style={[styles.checkbox, remember && styles.checkboxChecked]}>
+                    {remember && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.rememberText}>Recordar contraseña</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity disabled={loading}>
+                  <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Botón Login */}
             <TouchableOpacity 
-              onPress={handleForgotPassword}
+              style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+              onPress={handleLogin}
               disabled={loading}
+              activeOpacity={0.8}
             >
-              <Text style={styles.forgotText}>Forgot Password?</Text>
+              {loading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.loginButtonText}>INICIAR SESIÓN</Text>
+              )}
             </TouchableOpacity>
           </View>
+
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Text style={styles.footerTitle}>TrackGPX | Global Tracking System</Text>
+            <Text style={styles.footerText}>
+              Copyright©2024 All Rights Reserved
+            </Text>
+          </View>
         </View>
-
-        {/* Botón Login */}
-        <TouchableOpacity 
-          style={[styles.loginButton, loading && styles.loginButtonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-          activeOpacity={0.8}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Text style={styles.loginButtonText}>Login</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      {/* Botones de plataforma - Separados del card */}
-      <View style={styles.platformSection}>
-        <View style={styles.platformButtons}>
-          <TouchableOpacity style={styles.platformButton}>
-            <Text style={styles.platformButtonText}>Android</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.platformButton}>
-            <Text style={styles.platformButtonText}>iOS</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Footer */}
-      <View style={styles.footer}>
-        <Text style={styles.footerTitle}>TrackGPX | Global Tracking System | Soporte técnico</Text>
-        <Text style={styles.footerText}>
-          Copyright©2005 All Rights Reserved | Política de privacidad | Términos de servicio
-        </Text>
-      </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -189,6 +186,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
+    minHeight: 600, // Para asegurar espacio en pantallas pequeñas
   },
   backgroundImage: {
     position: 'absolute',
@@ -198,44 +196,43 @@ const styles = StyleSheet.create({
   },
   loginCard: {
     width: '100%',
-    maxWidth: 450,
+    maxWidth: 400, // Un poco más estrecho para elegancia
     backgroundColor: 'white',
     borderRadius: 24,
-    paddingTop: 80,
+    paddingTop: 70,
     paddingBottom: 40,
-    paddingHorizontal: 32,
+    paddingHorizontal: 25,
     alignItems: 'center',
     position: 'relative',
-    zIndex: 10,
-    marginBottom: 32,
+    marginTop: 60, // Espacio para el logo flotante
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.3,
     shadowRadius: 20,
     elevation: 10,
   },
   logoContainer: {
     position: 'absolute',
-    width: 120,
-    height: 112,
-    top: -56,
-    left: '50%',
-    marginLeft: -60,
+    width: 110,
+    height: 110,
+    top: -55,
+    alignSelf: 'center',
     backgroundColor: 'white',
-    borderRadius: 56,
+    borderRadius: 55,
     borderWidth: 4,
     borderColor: '#e5e7eb',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
     elevation: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 20,
   },
   logoImage: {
-    width: 210,
-    height: 100,
+    width: 90,
+    height: 90,
     resizeMode: 'contain',
   },
   errorContainer: {
@@ -246,22 +243,22 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: '#ef4444',
     borderRadius: 8,
-    padding: 12,
-    marginBottom: 20,
+    padding: 10,
+    marginBottom: 15,
   },
   errorIcon: {
-    fontSize: 18,
+    fontSize: 16,
     marginRight: 8,
   },
   errorText: {
     flex: 1,
     color: '#991b1b',
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
   },
   inputsContainer: {
     width: '100%',
-    marginTop: 20,
+    marginTop: 10,
   },
   inputContainer: {
     width: '100%',
@@ -273,14 +270,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 16,
     backgroundColor: '#f9fafb',
+    height: 50,
   },
   inputIcon: {
     fontSize: 18,
-    marginRight: 8,
+    marginRight: 10,
+    opacity: 0.7,
   },
   input: {
     flex: 1,
-    paddingVertical: 12,
+    height: '100%',
     fontSize: 16,
     color: '#1f2937',
   },
@@ -290,24 +289,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 24,
+    marginTop: 5,
   },
   rememberButton: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   checkbox: {
-    width: 18,
-    height: 18,
+    width: 20,
+    height: 20,
     borderWidth: 2,
-    borderColor: "#50b287",
-    borderRadius: 4,
-    backgroundColor: "transparent",
+    borderColor: "#226bfc", // Color primario
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
   },
   checkboxChecked: {
-    backgroundColor: "#50b287",
+    backgroundColor: "#226bfc",
   },
   checkmark: {
     color: '#fff',
@@ -316,80 +315,47 @@ const styles = StyleSheet.create({
   },
   rememberText: {
     color: '#4b5563',
-    fontSize: 14,
+    fontSize: 13,
   },
   forgotText: {
-    color: '#50b287',
-    fontSize: 14,
-    fontWeight: 'bold',
+    color: '#226bfc',
+    fontSize: 13,
+    fontWeight: '600',
   },
   loginButton: {
     width: '100%',
     backgroundColor: '#226bfc',
-    borderRadius: 25,
-    paddingVertical: 14,
+    borderRadius: 14,
+    height: 50,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
-    shadowColor: '#000',
+    shadowColor: '#226bfc',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 6,
+    shadowRadius: 8,
+    elevation: 4,
   },
   loginButtonDisabled: {
-    opacity: 0.7,
+    opacity: 0.6,
   },
   loginButtonText: {
     color: 'white',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
-  platformSection: {
-    marginTop: 20,
-    marginBottom: 30,
-    alignItems: 'center',
-  },
-  platformButtons: {
-    flexDirection: 'row',
-    gap: 20,
-  },
-  platformButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 20,
-    paddingHorizontal: 25,
-    paddingVertical: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  platformButtonText: {
-    color: '#2c3e50',
-    fontSize: 14,
-    fontWeight: 'bold',
+    letterSpacing: 1,
   },
   footer: {
-    position: 'absolute',
-    bottom: 20,
-    left: 0,
-    right: 0,
+    marginTop: 40,
     alignItems: 'center',
-    paddingHorizontal: 20,
   },
   footerTitle: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-    textAlign: 'center',
-    marginBottom: 8,
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginBottom: 4,
     fontWeight: '500',
   },
   footerText: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.6)',
-    textAlign: 'center',
-    lineHeight: 16,
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.4)',
   },
 });

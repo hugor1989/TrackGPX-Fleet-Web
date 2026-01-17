@@ -2,6 +2,7 @@
 
 import { Int32 } from 'react-native/Libraries/Types/CodegenTypes';
 import apiClient from './client';
+import AsyncStorage from '@react-native-async-storage/async-storage'; 
 
 // 1. 👇 Agrega y EXPORTA la interfaz aquí al inicio del archivo
 export interface TeamMember {
@@ -15,6 +16,26 @@ export interface TeamMember {
   roles: any[]; 
   status?: string;
   account?: any; // Si necesitas datos de la relación account
+}
+
+// 2. 👇 Agrega la interfaz para crear empleado
+export interface CreateEmployeeRequest {
+  name: string;
+  email: string;
+  password: string;
+  phone?: string;
+  position?: string;
+  timezone?: string;
+  roles: number[]; // Array de IDs de roles
+  company_id?: number; // Opcional - se puede obtener del usuario logueado
+  // NOTA: No incluimos company_id, el backend lo toma del usuario logueado
+}
+
+
+// 3. 👇 Agrega la interfaz para la respuesta de creación
+export interface CreateEmployeeResponse {
+  success: boolean;
+  message?: string
 }
 
 export interface Company {
@@ -42,31 +63,137 @@ export interface UpdateCompanyRequest {
 }
 
 class CompanyService {
-  /* export const getCompanyEmployees = async (companyId: number) => {
-    const response = await client.get(`/companies/${companyId}/users`);
-    return response.data;
-};
 
-export const addCompanyEmployee = async (userData: any) => {
-    const response = await client.post('/users', userData); // O tu endpoint específico
-    return response.data;
-}; */
+   // Función auxiliar para obtener el company_id del usuario logueado
+  private async getCurrentCompanyId(): Promise<number | null> {
+    try {
+      const userData = await AsyncStorage.getItem('user_data');
 
+      //console.log(userData);
+      if (userData) {
+        const user = JSON.parse(userData);
+        //console.log('👤 Usuario actual:', user);
+        
+        // Buscar company_id en diferentes ubicaciones posibles
+        const companyId = user.company_id || user.company?.id || user.companyId;
+        //console.log('🏢 company_id encontrado:', companyId);
+        return companyId;
+      }
+      return null;
+    } catch (error) {
+     // console.error('❌ Error obteniendo company_id:', error);
+      return null;
+    }
+  }
+
+  
   async getCompanyEmployees(): Promise<TeamMember[]> {
     try {
       // La URL ya no lleva ID
       const response = await apiClient.get<any>('/admin/company-users/get-users');
       
-      console.log('🏢 Equipo obtenido:', response.data);
+      //console.log('🏢 Equipo obtenido:', response.data);
       
       // Ajusta esto según si tu back devuelve { data: [...] } o { success: true, data: [...] }
       return response.data.data || response.data; 
       
     } catch (error: any) {
-      console.error('❌ Error obteniendo equipo:', error);
+      //console.error('❌ Error obteniendo equipo:', error);
       throw new Error(error.response?.data?.message || 'Error al obtener usuarios');
     }
-}
+  }
+
+  /**
+   * Crear nuevo empleado/miembro del equipo
+   */
+  async createEmployee(data: CreateEmployeeRequest): Promise<CreateEmployeeResponse> {
+    try {
+      // Obtener company_id del usuario actual
+      const companyId = await this.getCurrentCompanyId();
+      
+      if (!companyId) {
+        throw new Error('No se pudo obtener el ID de la empresa. Inicie sesión nuevamente.');
+      }
+      
+      // Crear payload completo con company_id
+      const payload = {
+        ...data,
+        company_id: companyId
+      };
+      
+      //console.log('👤 Creando nuevo empleado con payload:', payload);
+      
+      const response = await apiClient.post<CreateEmployeeResponse>(
+        '/admin/company-users/create',
+        payload
+      );
+      
+      //console.log('✅ Empleado creado:', response.data || response);
+      
+      return response;
+      
+    } catch (error: any) {
+     // console.error('❌ Error creando empleado:', error);
+      
+      if (error.response) {
+        const errorData = error.response.data;
+        //console.error('Error response:', errorData);
+        
+        if (errorData.errors) {
+          const errorMessages = Object.values(errorData.errors).flat().join(', ');
+          throw new Error(`Error de validación: ${errorMessages}`);
+        }
+        
+        throw new Error(errorData.message || 'Error al crear empleado');
+      }
+      
+      throw new Error(error.message || 'Error de conexión al crear empleado');
+    }
+  }
+
+  /**
+   * Actualizar empleado/miembro del equipo
+   */
+  async updateEmployee(id: number, data: Partial<CreateEmployeeRequest>): Promise<CreateEmployeeResponse> {
+    try {
+      console.log('📝 Actualizando empleado ID:', id, data);
+      
+      const response = await apiClient.put<CreateEmployeeResponse>(
+        `/admin/company-users/update/${id}`,
+        data
+      );
+      
+      console.log('✅ Empleado actualizado:', response.data || response);
+      
+      return response.data || response;
+      
+    } catch (error: any) {
+      console.error('❌ Error actualizando empleado:', error);
+      throw new Error(error.response?.data?.message || 'Error al actualizar empleado');
+    }
+  }
+
+  /**
+   * Eliminar empleado/miembro del equipo
+   */
+  async deleteEmployee(id: number): Promise<{ success: boolean; message: string }> {
+    try {
+      console.log('🗑️ Eliminando empleado ID:', id);
+      
+      const response = await apiClient.delete<{ success: boolean; message: string }>(
+        `/admin/company-users/delete/${id}`
+      );
+      
+      console.log('✅ Empleado eliminado:', response.data || response);
+      
+      return response.data || response;
+      
+    } catch (error: any) {
+      console.error('❌ Error eliminando empleado:', error);
+      throw new Error(error.response?.data?.message || 'Error al eliminar empleado');
+    }
+  }
+
   /**
    * Obtener información de la empresa
    */
