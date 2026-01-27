@@ -1,30 +1,27 @@
-// src/api/authService.ts
-
 import apiClient from './client';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { StorageHelper } from '../utils/storageHelper'; // ✅ Importación correcta
 import { AxiosError } from 'axios';
+
+// ---------------------------------------------------------------------------
+// INTERFACES
+// ---------------------------------------------------------------------------
+
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+  company_id: number;
+  company?: {
+    id: number;
+    name: string;
+    openpay_customer_id: string;
+  };
+}
 
 export interface LoginRequest {
   email: string;
   password: string;
   remember?: boolean;
-}
-
-export interface LoginResponse {
-  success: boolean;
-  token?: string;
-  user?: {
-    id: number;
-    name: string;
-    email: string;
-    company_id: number;
-    company?: {
-      id: number;
-      name: string;
-      openpay_customer_id: string;
-    };
-  };
-  message?: string;
 }
 
 export interface RegisterRequest {
@@ -35,50 +32,69 @@ export interface RegisterRequest {
   company_name: string;
 }
 
-// Tipo para errores de API
+export interface AuthResponse {
+  success: boolean;
+  token?: string;
+  data?: {
+    user?: User;
+  };
+  message?: string;
+}
+
+// Tipo para errores de API (Laravel suele devolver "message" y "errors")
 interface ApiErrorResponse {
   message: string;
   errors?: Record<string, string[]>;
 }
 
+// ---------------------------------------------------------------------------
+// SERVICIO DE AUTENTICACIÓN
+// ---------------------------------------------------------------------------
+
 class AuthService {
+  
   /**
-   * Manejar errores de API de forma consistente
+   * Helper privado para formatear errores de Axios
    */
   private handleError(error: unknown): string {
     if (error instanceof AxiosError) {
       const apiError = error.response?.data as ApiErrorResponse;
-      return apiError?.message || error.message || 'Error desconocido';
+      // Si hay un mensaje específico del backend, úsalo.
+      return apiError?.message || error.message || 'Error de conexión con el servidor';
     }
-    
     if (error instanceof Error) {
       return error.message;
     }
-    
-    return 'Error desconocido';
+    return 'Ha ocurrido un error desconocido';
   }
 
   /**
-   * Login de usuario
+   * Iniciar sesión
    */
-  async login(credentials: LoginRequest): Promise<LoginResponse> {
+  async login(credentials: LoginRequest): Promise<AuthResponse> {
     try {
-      const response = await apiClient.post<LoginResponse>('/auth/login', {
+      const response = await apiClient.post<AuthResponse>('/auth/login', {
         email: credentials.email,
         password: credentials.password,
       });
 
-      console.log('Login response:', response);
-      if (response.token && response.user) {
-        await AsyncStorage.setItem('auth_token', response.token);
-        await AsyncStorage.setItem('user_data', JSON.stringify(response.user));
+      if (__DEV__) {
+        console.log('🔐 Login Response:', response.success ? 'Success' : 'Failed');
+      }
+
+      // Validamos que existan token y datos del usuario
+      if (response.token && response.data?.user) {
+        // ✅ Guardar usando StorageHelper
+        await StorageHelper.setItem('auth_token', response.token);
+        await StorageHelper.setItem('user_data', JSON.stringify(response.data.user));
         
+        // Manejo de "Recordar usuario"
         if (credentials.remember) {
-          await AsyncStorage.setItem('remember_me', 'true');
-          await AsyncStorage.setItem('saved_email', credentials.email);
+          await StorageHelper.setItem('remember_me', 'true');
+          await StorageHelper.setItem('saved_email', credentials.email);
         } else {
-          await AsyncStorage.removeItem('remember_me');
-          await AsyncStorage.removeItem('saved_email');
+          await StorageHelper.removeItem('remember_me');
+          await StorageHelper.removeItem('saved_email');
         }
       }
 
@@ -93,29 +109,34 @@ class AuthService {
   }
 
   /**
-   * Logout
+   * Cerrar sesión
    */
   async logout(): Promise<void> {
     try {
+      // Intentamos avisar al backend
       await apiClient.post('/logout');
     } catch (error) {
-      console.error('Logout error:', error);
+      console.warn('Logout warning: No se pudo conectar con el servidor', error);
     } finally {
-      await AsyncStorage.removeItem('auth_token');
-      await AsyncStorage.removeItem('user_data');
+      // ✅ Siempre limpiamos el almacenamiento local, falle o no el backend
+      await StorageHelper.removeItem('auth_token');
+      await StorageHelper.removeItem('user_data');
     }
   }
 
   /**
-   * Registrar nuevo usuario
+   * Registrar nuevo usuario (Empresa)
    */
-  async register(data: RegisterRequest): Promise<LoginResponse> {
+  async register(data: RegisterRequest): Promise<AuthResponse> {
     try {
-      const response = await apiClient.post<LoginResponse>('/register', data);
+      const response = await apiClient.post<AuthResponse>('/register', data);
 
-      if (response.token && response.user) {
-        await AsyncStorage.setItem('auth_token', response.token);
-        await AsyncStorage.setItem('user_data', JSON.stringify(response.user));
+      // Corrección: Acceder a user dentro de data, igual que en login
+      const user = response.data?.user;
+
+      if (response.token && user) {
+        await StorageHelper.setItem('auth_token', response.token);
+        await StorageHelper.setItem('user_data', JSON.stringify(user));
       }
 
       return response;
@@ -129,22 +150,22 @@ class AuthService {
   }
 
   /**
-   * Obtener token actual
+   * Obtener token actual (útil para validaciones rápidas)
    */
   async getToken(): Promise<string | null> {
-    return await AsyncStorage.getItem('auth_token');
+    return await StorageHelper.getItem('auth_token');
   }
 
   /**
-   * Obtener usuario actual
+   * Obtener objeto usuario desde storage
    */
-  async getCurrentUser(): Promise<any | null> {
-    const userData = await AsyncStorage.getItem('user_data');
+  async getCurrentUser(): Promise<User | null> {
+    const userData = await StorageHelper.getItem('user_data');
     return userData ? JSON.parse(userData) : null;
   }
 
   /**
-   * Verificar si está autenticado
+   * Verificar si existe sesión localmente
    */
   async isAuthenticated(): Promise<boolean> {
     const token = await this.getToken();
@@ -152,52 +173,53 @@ class AuthService {
   }
 
   /**
-   * Obtener email guardado (remember me)
+   * Recuperar email guardado para autocompletar login
    */
   async getSavedEmail(): Promise<string | null> {
-    const rememberMe = await AsyncStorage.getItem('remember_me');
+    const rememberMe = await StorageHelper.getItem('remember_me');
     if (rememberMe === 'true') {
-      return await AsyncStorage.getItem('saved_email');
+      return await StorageHelper.getItem('saved_email');
     }
     return null;
   }
 
   /**
-   * Verificar token (validar con backend)
+   * Validar token contra el backend (útil al abrir la app)
    */
   async verifyToken(): Promise<boolean> {
     try {
-      const response = await apiClient.get('/user');
-      return !!response;
+      // Si el endpoint /user retorna 200 OK, el token es válido
+      await apiClient.get('/user');
+      return true;
     } catch (error) {
+      // Si falla (401), hacemos logout local
       await this.logout();
       return false;
     }
   }
 
   /**
-   * Refresh token
+   * Renovar token (Refresh Token)
    */
   async refreshToken(): Promise<boolean> {
     try {
       const response = await apiClient.post<{ token: string }>('/refresh');
       if (response.token) {
-        await AsyncStorage.setItem('auth_token', response.token);
+        await StorageHelper.setItem('auth_token', response.token);
         return true;
       }
       return false;
     } catch (error) {
-      console.error('Refresh token error:', error);
       return false;
     }
   }
 
   /**
-   * Forgot password
+   * Solicitar recuperación de contraseña
    */
   async forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
     try {
-      const response = await apiClient.post('/forgot-password', { email });
+      const response = await apiClient.post<{ message: string }>('/forgot-password', { email });
       return {
         success: true,
         message: response.message || 'Correo de recuperación enviado',
@@ -209,36 +231,9 @@ class AuthService {
       };
     }
   }
-
-  /**
-   * Reset password
-   */
-  async resetPassword(data: {
-    token: string;
-    email: string;
-    password: string;
-    password_confirmation: string;
-  }): Promise<{ success: boolean; message: string }> {
-    try {
-      const response = await apiClient.post('/reset-password', data);
-      return {
-        success: true,
-        message: response.message || 'Contraseña actualizada',
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: this.handleError(error),
-      };
-    }
-  }
 }
 
-// Crear instancia singleton
+// Singleton
 const authServiceInstance = new AuthService();
-
-// Export default para import default
 export default authServiceInstance;
-
-// Export named para import destructuring
 export { authServiceInstance as authService };

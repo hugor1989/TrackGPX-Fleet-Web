@@ -7,7 +7,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-// import companyService from '../../api/companyService'; // Importa tu servicio
+import companyService from '../../api/companyService'; // Importa tu servicio
 
 const AddMemberScreen = () => {
   const navigation = useNavigation();
@@ -68,15 +68,38 @@ const AddMemberScreen = () => {
         roles: [formData.roleId] // Laravel espera un array de IDs
         // NOTA: No enviamos company_id, el backend lo toma del usuario logueado
       };
-
-      console.log("Enviando payload:", payload);
       
       // AQUI LLAMAS A TU SERVICIO REAL
-      // await companyService.createEmployee(payload);
+     const response = await companyService.createEmployee(payload);
+    console.log("📥 Respuesta completa:", response);
 
-      Alert.alert("Éxito", "Usuario creado correctamente", [
-        { text: "OK", onPress: () => navigation.goBack() }
-      ]);
+    if (response.success) {
+        console.log("✅ Éxito - Mostrando alerta");
+        Alert.alert("Éxito", "Usuario creado correctamente", [
+            { 
+                text: "OK", 
+                onPress: () => {
+                    console.log("🔄 Navegando atrás");
+                    navigation.goBack();
+                }
+            }
+        ]);
+        
+        // Limpiar formulario inmediatamente
+        setFormData({
+            name: '',
+            email: '',
+            password: '',
+            phone: '',
+            position: '',
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            roleId: 3,
+        });
+
+     }else{
+          setError(response.message || "Error al crear el usuario");
+     }
+      
 
     } catch (err: any) {
       setError(err.message || "Error al crear el usuario");

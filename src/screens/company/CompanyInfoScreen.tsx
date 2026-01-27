@@ -1,6 +1,4 @@
-// src/screens/company/CompanyInfoScreen.tsx
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +10,7 @@ import {
   Image,
   Platform,
   Alert,
+  KeyboardAvoidingView, // 1. Importante para móviles
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 export default function CompanyInfoScreen() {
   const navigation = useNavigation();
+  const scrollViewRef = useRef<ScrollView>(null); // 2. Referencia para scroll automático
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -39,37 +39,53 @@ export default function CompanyInfoScreen() {
       setLoading(true);
       const data = await companyService.getCompany();
       setCompany(data);
-      setFormData({
-        name: data.name,
-        rfc: data.rfc,
-        fiscal_address: data.fiscal_address,
-        contact_email: data.contact_email,
-        phone: data.phone,
-        website: data.website,
-      });
+      resetForm(data);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'Error al cargar información');
     } finally {
       setLoading(false);
     }
   };
 
+  const resetForm = (data: Company) => {
+    setFormData({
+      name: data.name,
+      rfc: data.rfc,
+      fiscal_address: data.fiscal_address,
+      contact_email: data.contact_email,
+      phone: data.phone,
+      website: data.website,
+    });
+  };
+
+  // Función auxiliar para subir al inicio si hay error
+  const scrollToTop = () => {
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  };
+
   const handleSave = async () => {
     setError('');
 
-    // Validaciones
+    // --- Validaciones Frontend ---
     if (!formData.name?.trim()) {
       setError('El nombre de la empresa es requerido');
+      scrollToTop();
       return;
     }
 
-    if (formData.rfc && !companyService.validateRFC(formData.rfc)) {
-      setError('RFC inválido');
-      return;
+    // Validación básica de RFC (12 o 13 caracteres)
+    if (formData.rfc) {
+      const rfcLen = formData.rfc.length;
+      if (rfcLen < 12 || rfcLen > 13) {
+        setError('El RFC debe tener 12 (Moral) o 13 (Física) caracteres');
+        scrollToTop();
+        return;
+      }
     }
 
-    if (formData.contact_email && !companyService.validateEmail(formData.contact_email)) {
+    if (formData.contact_email && !formData.contact_email.includes('@')) {
       setError('Email inválido');
+      scrollToTop();
       return;
     }
 
@@ -80,7 +96,8 @@ export default function CompanyInfoScreen() {
       setIsEditing(false);
       Alert.alert('Éxito', 'Información actualizada correctamente');
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'Error al guardar');
+      scrollToTop();
     } finally {
       setSaving(false);
     }
@@ -88,14 +105,7 @@ export default function CompanyInfoScreen() {
 
   const handleCancel = () => {
     if (company) {
-      setFormData({
-        name: company.name,
-        rfc: company.rfc,
-        fiscal_address: company.fiscal_address,
-        contact_email: company.contact_email,
-        phone: company.phone,
-        website: company.website,
-      });
+      resetForm(company);
     }
     setIsEditing(false);
     setError('');
@@ -109,16 +119,7 @@ export default function CompanyInfoScreen() {
       input.onchange = async (e: any) => {
         const file = e.target.files[0];
         if (file) {
-          try {
-            setSaving(true);
-            await companyService.uploadLogo(file);
-            await loadCompanyInfo();
-            Alert.alert('Éxito', 'Logo actualizado correctamente');
-          } catch (err: any) {
-            Alert.alert('Error', err.message);
-          } finally {
-            setSaving(false);
-          }
+          uploadImageProcess(file);
         }
       };
       input.click();
@@ -131,26 +132,32 @@ export default function CompanyInfoScreen() {
       });
 
       if (!result.canceled && result.assets[0]) {
-        try {
-          setSaving(true);
-          const response = await fetch(result.assets[0].uri);
-          const blob = await response.blob();
-          await companyService.uploadLogo(blob);
-          await loadCompanyInfo();
-          Alert.alert('Éxito', 'Logo actualizado correctamente');
-        } catch (err: any) {
-          Alert.alert('Error', err.message);
-        } finally {
-          setSaving(false);
-        }
+        // Para móvil, necesitamos convertir la URI a Blob o enviarla como FormData
+        // Aquí asumimos que tu servicio maneja la URI o Blob correctamente
+        const response = await fetch(result.assets[0].uri);
+        const blob = await response.blob();
+        uploadImageProcess(blob);
       }
+    }
+  };
+
+  const uploadImageProcess = async (fileOrBlob: any) => {
+    try {
+      setSaving(true);
+      await companyService.uploadLogo(fileOrBlob);
+      await loadCompanyInfo(); // Recargar para ver el nuevo logo
+      Alert.alert('Éxito', 'Logo actualizado correctamente');
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleRemoveLogo = () => {
     Alert.alert(
       'Eliminar Logo',
-      '¿Estás seguro de que deseas eliminar el logo de la empresa?',
+      '¿Estás seguro de que deseas eliminar el logo?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -161,7 +168,6 @@ export default function CompanyInfoScreen() {
               setSaving(true);
               await companyService.deleteLogo();
               await loadCompanyInfo();
-              Alert.alert('Éxito', 'Logo eliminado correctamente');
             } catch (err: any) {
               Alert.alert('Error', err.message);
             } finally {
@@ -175,340 +181,308 @@ export default function CompanyInfoScreen() {
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Mi Empresa</Text>
-          <View style={{ width: 24 }} />
-        </View>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#226bfc" />
-        </View>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#226bfc" />
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Header Fijo */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Mi Empresa</Text>
-        {!isEditing ? (
-          <TouchableOpacity onPress={() => setIsEditing(true)}>
-            <Ionicons name="pencil" size={24} color="#fff" />
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 24 }} />
-        )}
+        <View style={styles.headerRight}>
+          {!isEditing ? (
+            <TouchableOpacity onPress={() => setIsEditing(true)}>
+              <Ionicons name="pencil" size={24} color="#fff" />
+            </TouchableOpacity>
+          ) : (
+             // Placeholder para mantener el título centrado
+            <View style={{ width: 24 }} />
+          )}
+        </View>
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {/* Logo Section */}
-        <View style={styles.logoSection}>
-          <View style={styles.logoContainer}>
-            {company?.logo ? (
-              <Image source={{ uri: company.logo }} style={styles.logo} />
-            ) : (
-              <View style={styles.logoPlaceholder}>
-                <Ionicons name="business" size={48} color="#9ca3af" />
+      {/* 3. KeyboardAvoidingView para que el teclado no tape inputs */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        <ScrollView 
+          ref={scrollViewRef}
+          style={styles.content} 
+          contentContainerStyle={styles.contentContainer}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Logo Section */}
+          <View style={styles.logoSection}>
+            <View style={styles.logoContainer}>
+              {company?.logo ? (
+                <Image source={{ uri: company.logo }} style={styles.logo} />
+              ) : (
+                <View style={styles.logoPlaceholder}>
+                  <Ionicons name="business" size={48} color="#9ca3af" />
+                </View>
+              )}
+            </View>
+            
+            {isEditing && (
+              <View style={styles.logoActions}>
+                <TouchableOpacity style={styles.logoButton} onPress={handlePickImage} disabled={saving}>
+                  <Ionicons name="camera" size={20} color="#226bfc" />
+                  <Text style={styles.logoButtonText}>Cambiar</Text>
+                </TouchableOpacity>
+                {company?.logo && (
+                  <TouchableOpacity style={styles.logoButtonDanger} onPress={handleRemoveLogo} disabled={saving}>
+                    <Ionicons name="trash" size={20} color="#ef4444" />
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </View>
-          {isEditing && (
-            <View style={styles.logoActions}>
-              <TouchableOpacity style={styles.logoButton} onPress={handlePickImage} disabled={saving}>
-                <Ionicons name="camera" size={20} color="#226bfc" />
-                <Text style={styles.logoButtonText}>Cambiar Logo</Text>
-              </TouchableOpacity>
-              {company?.logo && (
-                <TouchableOpacity style={styles.logoButtonDanger} onPress={handleRemoveLogo} disabled={saving}>
-                  <Ionicons name="trash" size={20} color="#ef4444" />
-                  <Text style={styles.logoButtonDangerText}>Eliminar</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-        </View>
 
-        {/* Form */}
-        <View style={styles.form}>
-          <Text style={styles.sectionTitle}>Información General</Text>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Nombre de la Empresa *</Text>
-            <TextInput
-              style={[styles.input, !isEditing && styles.inputDisabled]}
-              value={formData.name}
-              onChangeText={(text) => setFormData({ ...formData, name: text })}
-              editable={isEditing}
-              placeholder="Nombre de la empresa"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>RFC</Text>
-            <TextInput
-              style={[styles.input, !isEditing && styles.inputDisabled]}
-              value={formData.rfc}
-              onChangeText={(text) => setFormData({ ...formData, rfc: companyService.formatRFC(text) })}
-              editable={isEditing}
-              placeholder="RFC (12-13 caracteres)"
-              autoCapitalize="characters"
-              maxLength={13}
-            />
-            <Text style={styles.hint}>Se utilizará para la facturación</Text>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Dirección Fiscal</Text>
-            <TextInput
-              style={[styles.input, styles.textArea, !isEditing && styles.inputDisabled]}
-              value={formData.fiscal_address}
-              onChangeText={(text) => setFormData({ ...formData, fiscal_address: text })}
-              editable={isEditing}
-              placeholder="Dirección fiscal completa"
-              multiline
-              numberOfLines={3}
-            />
-            <Text style={styles.hint}>Para emisión de facturas</Text>
-          </View>
-
-          <Text style={styles.sectionTitle}>Contacto</Text>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email de Contacto</Text>
-            <TextInput
-              style={[styles.input, !isEditing && styles.inputDisabled]}
-              value={formData.contact_email}
-              onChangeText={(text) => setFormData({ ...formData, contact_email: text.toLowerCase() })}
-              editable={isEditing}
-              placeholder="contacto@empresa.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Teléfono</Text>
-            <TextInput
-              style={[styles.input, !isEditing && styles.inputDisabled]}
-              value={formData.phone}
-              onChangeText={(text) => setFormData({ ...formData, phone: text })}
-              editable={isEditing}
-              placeholder="(33) 1234-5678"
-              keyboardType="phone-pad"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Sitio Web</Text>
-            <TextInput
-              style={[styles.input, !isEditing && styles.inputDisabled]}
-              value={formData.website}
-              onChangeText={(text) => setFormData({ ...formData, website: text.toLowerCase() })}
-              editable={isEditing}
-              placeholder="https://www.empresa.com"
-              keyboardType="url"
-              autoCapitalize="none"
-            />
-          </View>
-
-          {/* Estado de la Empresa (Solo vista) */}
-          {company?.status && (
-            <View style={styles.statusContainer}>
-              <Text style={styles.label}>Estado de la Cuenta</Text>
-              <View style={[
-                styles.statusBadge,
-                company.status === 'active' ? styles.statusActive : styles.statusSuspended
-              ]}>
-                <Text style={styles.statusText}>
-                  {company.status === 'active' ? 'Activa' : 'Suspendida'}
-                </Text>
+          {/* Form */}
+          <View style={styles.form}>
+            {/* Mensaje de Error (ahora con scroll automático hacia aquí) */}
+            {error ? (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle" size={20} color="#ef4444" />
+                <Text style={styles.errorText}>{error}</Text>
               </View>
-            </View>
-          )}
+            ) : null}
 
-          {error ? (
-            <View style={styles.errorBox}>
-              <Ionicons name="alert-circle" size={20} color="#ef4444" />
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
+            <Text style={styles.sectionTitle}>Información General</Text>
 
-          {isEditing && (
-            <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={handleCancel}
-                disabled={saving}
-              >
-                <Text style={styles.cancelButtonText}>Cancelar</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.saveButton, saving && styles.buttonDisabled]}
-                onPress={handleSave}
-                disabled={saving}
-              >
-                {saving ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="checkmark" size={20} color="#fff" />
-                    <Text style={styles.saveButtonText}>Guardar Cambios</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Nombre de la Empresa *</Text>
+              <TextInput
+                style={[styles.input, !isEditing && styles.inputDisabled]}
+                value={formData.name}
+                onChangeText={(text) => setFormData({ ...formData, name: text })}
+                editable={isEditing}
+                placeholder="Nombre de la empresa"
+              />
             </View>
-          )}
-        </View>
-      </ScrollView>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>RFC</Text>
+              <TextInput
+                style={[styles.input, !isEditing && styles.inputDisabled]}
+                value={formData.rfc}
+                onChangeText={(text) => setFormData({ ...formData, rfc: text.toUpperCase() })} // Mayúsculas directo
+                editable={isEditing}
+                placeholder="RFC (12-13 caracteres)"
+                autoCapitalize="characters"
+                maxLength={13}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Dirección Fiscal</Text>
+              <TextInput
+                style={[styles.input, styles.textArea, !isEditing && styles.inputDisabled]}
+                value={formData.fiscal_address}
+                onChangeText={(text) => setFormData({ ...formData, fiscal_address: text })}
+                editable={isEditing}
+                placeholder="Dirección fiscal completa"
+                multiline
+                numberOfLines={3}
+              />
+            </View>
+
+            <Text style={styles.sectionTitle}>Contacto</Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                style={[styles.input, !isEditing && styles.inputDisabled]}
+                value={formData.contact_email}
+                onChangeText={(text) => setFormData({ ...formData, contact_email: text.toLowerCase() })}
+                editable={isEditing}
+                placeholder="contacto@empresa.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Teléfono</Text>
+              <TextInput
+                style={[styles.input, !isEditing && styles.inputDisabled]}
+                value={formData.phone}
+                onChangeText={(text) => setFormData({ ...formData, phone: text })}
+                editable={isEditing}
+                placeholder="(33) 1234-5678"
+                keyboardType="phone-pad"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Sitio Web</Text>
+              <TextInput
+                style={[styles.input, !isEditing && styles.inputDisabled]}
+                value={formData.website}
+                onChangeText={(text) => setFormData({ ...formData, website: text.toLowerCase() })}
+                editable={isEditing}
+                placeholder="www.empresa.com"
+                keyboardType="url"
+                autoCapitalize="none"
+              />
+            </View>
+
+            {/* Estado (Solo lectura) */}
+            {company?.status && (
+              <View style={styles.statusContainer}>
+                <Text style={styles.label}>Estado de la Cuenta</Text>
+                <View style={[
+                  styles.statusBadge,
+                  company.status === 'active' ? styles.statusActive : styles.statusSuspended
+                ]}>
+                  <Text style={styles.statusText}>
+                    {company.status === 'active' ? 'Activa' : 'Suspendida'}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Botones de Acción */}
+            {isEditing && (
+              <View style={styles.buttonRow}>
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={handleCancel}
+                  disabled={saving}
+                >
+                  <Text style={styles.cancelButtonText}>Cancelar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.saveButton, saving && styles.buttonDisabled]}
+                  onPress={handleSave}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark" size={20} color="#fff" />
+                      <Text style={styles.saveButtonText}>Guardar</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+          
+          {/* Espacio extra al final para scroll */}
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb' },
+  container: { flex: 1, backgroundColor: '#f4f6f8' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f4f6f8' },
+  
+  // Header optimizado
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'web' ? 20 : 60,
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'web' ? 16 : 50, // Ajuste para SafeArea
+    paddingBottom: 16,
     backgroundColor: '#226bfc',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 2 },
   },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  backButton: { padding: 4 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', minWidth: 32 },
+
   content: { flex: 1 },
   contentContainer: { padding: 20 },
-  logoSection: { alignItems: 'center', marginBottom: 32 },
+
+  // Logo
+  logoSection: { alignItems: 'center', marginBottom: 24 },
   logoContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 100, height: 100, borderRadius: 50,
     backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-    marginBottom: 16,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 12,
+    borderWidth: 4, borderColor: '#fff',
+    shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, elevation: 4
   },
-  logo: { width: 120, height: 120, borderRadius: 60 },
+  logo: { width: 100, height: 100, borderRadius: 50 },
   logoPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  logoActions: { flexDirection: 'row', gap: 12 },
+  logoActions: { flexDirection: 'row', gap: 10 },
   logoButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#226bfc',
-    gap: 8,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 20, backgroundColor: '#eef2ff',
+    gap: 6,
   },
-  logoButtonText: { fontSize: 14, color: '#226bfc', fontWeight: '600' },
+  logoButtonText: { fontSize: 13, color: '#226bfc', fontWeight: '600' },
   logoButtonDanger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ef4444',
-    gap: 8,
+    padding: 6, borderRadius: 20, backgroundColor: '#fee2e2',
   },
-  logoButtonDangerText: { fontSize: 14, color: '#ef4444', fontWeight: '600' },
+
+  // Formulario
   form: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    backgroundColor: '#fff', borderRadius: 12, padding: 20,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    marginTop: 24,
-    marginBottom: 16,
+    fontSize: 16, fontWeight: '700', color: '#111827',
+    marginTop: 10, marginBottom: 15, borderBottomWidth: 1, borderBottomColor: '#f3f4f6', paddingBottom: 8
   },
   inputGroup: { marginBottom: 16 },
-  label: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
+  label: { fontSize: 13, fontWeight: '600', color: '#4b5563', marginBottom: 6 },
   input: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#1f2937',
-    backgroundColor: '#fff',
+    borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 10,
+    fontSize: 15, color: '#1f2937', backgroundColor: '#fff',
   },
-  inputDisabled: { backgroundColor: '#f3f4f6', color: '#6b7280' },
-  textArea: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  hint: {
-    fontSize: 12,
-    color: '#9ca3af',
-    marginTop: 4,
-    fontStyle: 'italic',
-  },
-  statusContainer: { marginTop: 24, marginBottom: 16 },
+  inputDisabled: { backgroundColor: '#f9fafb', color: '#6b7280', borderColor: '#f3f4f6' },
+  textArea: { minHeight: 70, textAlignVertical: 'top' },
+  
+  // Status
+  statusContainer: { marginTop: 10, marginBottom: 10 },
   statusBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+    alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: 6,
   },
   statusActive: { backgroundColor: '#dcfce7' },
   statusSuspended: { backgroundColor: '#fee2e2' },
-  statusText: { fontSize: 14, fontWeight: '600' },
+  statusText: { fontSize: 13, fontWeight: '600', color: '#374151' },
+
+  // Errores
   errorBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fee2e2',
-    borderLeftWidth: 4,
-    borderLeftColor: '#ef4444',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 16,
-    gap: 8,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca',
+    borderRadius: 8, padding: 12, marginBottom: 20, gap: 8
   },
-  errorText: { flex: 1, fontSize: 14, color: '#991b1b' },
-  buttonRow: { flexDirection: 'row', marginTop: 24, gap: 12 },
+  errorText: { flex: 1, fontSize: 13, color: '#991b1b' },
+
+  // Botones
+  buttonRow: { flexDirection: 'row', marginTop: 20, gap: 12 },
   cancelButton: {
-    flex: 1,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+    flex: 1, backgroundColor: '#f3f4f6', borderRadius: 8,
+    paddingVertical: 12, alignItems: 'center',
   },
-  cancelButtonText: { fontSize: 16, fontWeight: '600', color: '#374151' },
+  cancelButtonText: { fontSize: 15, fontWeight: '600', color: '#4b5563' },
   saveButton: {
-    flex: 1,
-    flexDirection: 'row',
-    backgroundColor: '#226bfc',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+    flex: 1, flexDirection: 'row', backgroundColor: '#226bfc',
+    borderRadius: 8, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', gap: 6
   },
-  saveButtonText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
-  buttonDisabled: { opacity: 0.5 },
+  saveButtonText: { fontSize: 15, fontWeight: 'bold', color: '#fff' },
+  buttonDisabled: { opacity: 0.7 },
 });

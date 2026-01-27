@@ -168,9 +168,14 @@ export default function FleetSidebar({
       badgeType: 'info',
       subItems: [
         { key: "Monitor-Mapa", label: "Mapa Tiempo Real", badge: fleetStats.enMovimiento },
-        { key: "Monitor-Lista", label: "Lista de Vehículos" },
+        { key: "Monitor-Lista", label: "Lista de Vehículos", screen: "VehicleList" },
         { key: "Monitor-Grupos", label: "Grupos y Rutas" },
-        { key: "Monitor-Geocercas", label: "Geocercas" },
+        // ✅ AQUÍ: Asegúrate de agregar la propiedad 'screen'
+        { 
+          key: "Monitor-Geocercas", 
+          label: "Geocercas", 
+          screen: "GeofencesList" // <--- Esto debe coincidir con el name en App.tsx
+        },
       ]
     },
     { 
@@ -193,10 +198,14 @@ export default function FleetSidebar({
       icon: "map-outline",
       iconType: 'Ionicons',
       subItems: [
-        { key: "Historial-Recorridos", label: "Recorridos" },
-        { key: "Historial-Paradas", label: "Paradas" },
-        { key: "Historial-Kilometraje", label: "Kilometraje" },
-        { key: "Historial-Comparar", label: "Comparar Vehículos" },
+      { 
+        key: "Recorridos", 
+        label: "Recorridos", 
+        screen: "Playback" // <--- Conectar aquí
+      },        
+        { key: "Historial-Paradas", label: "Paradas" , screen: "StopsReport"},
+        { key: "Historial-Kilometraje", label: "Kilometraje", screen: "MileageReport" },
+        // { key: "Historial-Comparar", label: "Comparar Vehículos" },
       ]
     },
     { 
@@ -208,11 +217,21 @@ export default function FleetSidebar({
       badgeType: 'danger',
       pulse: fleetStats.alertasCriticas > 0,
       subItems: [
-        { key: "Alertas-Activas", label: "Alertas Activas", badge: fleetStats.alertasCriticas },
-        { key: "Alertas-Geocercas", label: "Geocercas" },
-        { key: "Alertas-Velocidad", label: "Exceso de Velocidad" },
-        { key: "Alertas-Mantenimiento", label: "Mantenimiento" },
-        { key: "Alertas-Configurar", label: "Configurar Alertas" },
+        { key: "Alertas-Activas", label: "Alertas Activas", badge: fleetStats.alertasCriticas, screen: "ActiveAlerts" },
+  
+        // Ruta: GeofenceLog
+        { key: "Alertas-Geocercas", label: "Geocercas", screen: "GeofenceLog" },
+        
+        // Ruta: SpeedLog
+        { key: "Alertas-Velocidad", label: "Exceso de Velocidad", screen: "SpeedLog" },
+        
+        // Ruta: MaintenanceLog
+        { key: "Alertas-Mantenimiento", label: "Mantenimiento", screen: "MaintenanceLog" },
+        { 
+            key: "Alertas-Configurar", 
+            label: "Configurar Alertas",
+            screen: "AlertsList" // <--- Este nombre debe coincidir con App.tsx
+        },        
       ]
     },
     { 
@@ -221,20 +240,20 @@ export default function FleetSidebar({
       icon: "receipt-outline",
       iconType: 'Ionicons',
       subItems: [
-        { key: "Facturacion-MisSuscripciones", label: "Mis Suscripciones" },
-        { key: "Facturacion-SolicitarFactura", label: "Solicitar Factura" },
-        { key: "Facturacion-Historial", label: "Historial de Facturas" },
+        { key: "Facturacion-MisSuscripciones", label: "Mis Suscripciones", screen: "Subscriptions" },
+        { key: "Facturacion-SolicitarFactura", label: "Solicitar Factura", screen: "RequestInvoice" },
+        { key: "Facturacion-Historial", label: "Historial de Facturas", screen: "InvoiceHistory" },
         { key: "Facturacion-MetodosPago", label: "Métodos de Pago", screen: "PaymentMethods" },
-        { key: "Facturacion-DatosFiscales", label: "Datos Fiscales" },
+        { key: "Facturacion-DatosFiscales", label: "Datos Fiscales", screen: "BillingInfo" },
       ]
     },
-    { 
+    /* { 
       key: "Planes", 
       label: "Planes y Precios", 
       icon: "pricetags-outline",
       iconType: 'Ionicons',
       screen: "PlanList"
-    },
+    }, */
     { 
       key: "Multas", 
       label: "Multas y Verificaciones", 
@@ -243,6 +262,7 @@ export default function FleetSidebar({
       badge: 2,
       badgeType: 'warning',
       subItems: [
+        
         { key: "Multas-Consultar", label: "Consultar Multas" },
         { key: "Multas-Pendientes", label: "Pendientes de Pago", badge: 2 },
         { key: "Multas-Historial", label: "Historial" },
@@ -268,11 +288,10 @@ export default function FleetSidebar({
       icon: "bar-chart-outline",
       iconType: 'Ionicons',
       subItems: [
-        { key: "Reportes-Operativos", label: "Operativos" },
-        { key: "Reportes-Financieros", label: "Financieros" },
-        { key: "Reportes-Conductores", label: "Conductores" },
-        { key: "Reportes-Combustible", label: "Combustible" },
-        { key: "Reportes-Personalizados", label: "Personalizados" },
+        // { key: "Reportes-Operativos", label: "Operativos" },
+        { key: "Reportes-Financieros", label: "Financieros", screen: "FinancialReport" },
+        { key: "Reportes-Conductores", label: "Conductores", screen: "DriverRanking" },
+        // { key: "Reportes-Combustible", label: "Combustible" },
       ]
     },
     { 
@@ -283,8 +302,11 @@ export default function FleetSidebar({
       subItems: [
         { key: "Config-Empresa", label: "Mi Empresa", screen: "CompanyInfo" },
         { key: "Config-Usuarios", label: "Usuarios y Roles" , screen: "TeamScreen" },
-        { key: "Config-Vehiculos", label: "Vehículos" },
-        { key: "Config-Dispositivos", label: "Dispositivos GPS", screen: "ActivateDevice" },
+        { key: "Config-Drivers", label: "Conductores" , screen: "DriversList" },
+        { key: "Config-Vehiculos", label: "Vehículos", screen: "VehiclesList" },
+        { key: "Config-Dispositivos", label: "Agregar GPS", screen: "ActivateDevice" },
+        { key: "Config-DispositivosList", label: "Dispositivos GPS", screen: "DevicesList" },
+
       ]
     },
     { 
@@ -490,7 +512,7 @@ export default function FleetSidebar({
                     size={20} 
                     color={THEME.colors.text} 
                   />
-                  {action.badge && renderBadge(action.badge, 'danger', action.pulse)}
+                  {action.badge ? renderBadge(action.badge, 'danger', action.pulse) : null}
                 </View>
                 {isExpanded && (
                   <Text style={styles.quickActionLabel}>{action.label}</Text>
@@ -583,7 +605,7 @@ export default function FleetSidebar({
                           ]} numberOfLines={1}>
                             {item.label}
                           </Text>
-                          {item.badge && renderBadge(item.badge, item.badgeType, item.pulse)}
+                          {item.badge ? renderBadge(item.badge, item.badgeType, item.pulse) : null}
                           
                           {hasSubmenu && isExpanded && (
                             <Ionicons 
@@ -673,12 +695,22 @@ export default function FleetSidebar({
                 )}
               </TouchableOpacity>
 
-              {onLogout && !isCollapsed && (
+              {/* 🟢 PON ESTO: */}
+              {onLogout && (
                 <TouchableOpacity 
-                  style={styles.logoutButton}
+                  style={[
+                    styles.logoutButton,
+                    // Si está colapsado, centramos el icono
+                    isCollapsed && { justifyContent: 'center', marginTop: 10 } 
+                  ]}
                   onPress={onLogout}
                 >
-                  <Ionicons name="log-out-outline" size={20} color={THEME.colors.text} />
+                  <Ionicons 
+                    name="log-out-outline" 
+                    size={20} 
+                    // Sugerencia: Ponerlo en rojo para que destaque como acción de salida
+                    color={THEME.colors.danger} 
+                  />
                 </TouchableOpacity>
               )}
             </View>

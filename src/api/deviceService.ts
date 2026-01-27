@@ -14,6 +14,13 @@ export interface Device {
   activated_at?: string;
   created_at: string;
   updated_at: string;
+  manufacturer?: string;
+  vehicle?: {
+    id: number;
+    name: string;
+    plate: string;
+  } | null;
+  subscription_status?: string;
 }
 
 export interface ActivateDeviceRequest {
@@ -56,7 +63,7 @@ class DeviceService {
    */
   async getDevices(): Promise<Device[]> {
     try {
-      const response = await apiClient.get<{ success: boolean; data: Device[] }>('/devices');
+      const response = await apiClient.get<{ success: boolean; data: Device[] }>('/billing/devices/devices-sinasignar');
       return response.data || response || [];
     } catch (error: any) {
       console.error('❌ Error getting devices:', error);
@@ -78,6 +85,25 @@ class DeviceService {
       throw new Error(error.response?.data?.message || 'Error al obtener dispositivo');
     }
   }
+
+  /**
+   * Obtener un dispositivo específico
+   */
+  async getAllDevices(): Promise<Device[]> {
+    try {
+      // ✅ CORRECCIÓN: Usar POST y la ruta correcta (asumiendo prefix 'devices' o 'activation')
+      // Ajusta la URL '/devices/get-all-devices' según tu grupo de rutas en api.php
+      const response = await apiClient.post<{ success: boolean; data: Device[] }>(
+        '/billing/devices/get-all-devices' // ⚠️ Verifica el prefijo en tu routes/api.php
+      );
+      
+      return response.data || [];
+    } catch (error: any) {
+      console.error('❌ Error getting devices:', error);
+      throw new Error(error.response?.data?.message || 'Error al obtener dispositivos');
+    }
+  }
+
 
   /**
    * Preview de activación (validar IMEI y código antes de activar)

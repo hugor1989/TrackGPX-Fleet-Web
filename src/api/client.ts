@@ -1,34 +1,40 @@
-// src/api/client.ts
-
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosError } from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { StorageHelper } from '../utils/storageHelper';
 
-// Configuración base - Compatible con Web, Android, iOS
-const getApiUrl = () => {
-  if (!__DEV__) {
-    return 'https://api.trackgpx.com/api'; // Producción
+// ---------------------------------------------------------------------------
+// CONFIGURACIÓN DE URLS
+// ---------------------------------------------------------------------------
+
+// ⚠️ IMPORTANTE: Cambia esta URL por la de tu servidor real cuando despliegues
+const PROD_API_URL = 'https://backend-flotillas.track-gpx.com/api'; 
+
+const getApiUrl = (): string => {
+  // 1. Entorno de Producción
+  if (process.env.NODE_ENV === 'production' || !__DEV__) {
+    return PROD_API_URL;
   }
 
-  // Desarrollo - Diferentes URLs por plataforma
+  // 2. Entorno de Desarrollo (Localhost)
   return Platform.select({
-    ios: 'http://127.0.0.1:8000/api',
-    android: 'http://10.0.2.2:8000/api',      // Emulador Android
-    // android: 'http://192.168.1.100:8000/api', // Dispositivo físico (descomentar y usar tu IP)
-    web: 'http://127.0.0.1:8000/api',
+    ios: 'http://127.0.0.1:8000/api',      // Simulador iOS
+    android: 'http://10.0.2.2:8000/api',   // Emulador Android
+    web: 'http://127.0.0.1:8000/api',      // Navegador Web
     default: 'http://127.0.0.1:8000/api',
   }) as string;
 };
 
-const API_URL = getApiUrl();
+// ---------------------------------------------------------------------------
+// CLASE API CLIENT
+// ---------------------------------------------------------------------------
 
 class ApiClient {
   private client: AxiosInstance;
 
   constructor() {
     this.client = axios.create({
-      baseURL: API_URL,
-      timeout: 30000,
+      baseURL: getApiUrl(),
+      timeout: 30000, // 30 segundos
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -39,24 +45,23 @@ class ApiClient {
   }
 
   private setupInterceptors() {
-    // Request Interceptor - Agregar token
+    // --- REQUEST INTERCEPTOR (Enviar Token) ---
     this.client.interceptors.request.use(
       async (config) => {
-        const token = await AsyncStorage.getItem('auth_token');
-        
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
+        try {
+          // Usamos StorageHelper para mantener consistencia
+          const token = await StorageHelper.getItem('auth_token');
 
-        // Log en desarrollo
-        if (__DEV__) {
-          console.log('📤 API Request:', {
-            method: config.method?.toUpperCase(),
-            url: config.url,
-            data: config.data,
-          });
-        }
+          if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+          }
 
+          if (__DEV__) {
+            console.log(`🚀 [API Request] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
+          }
+        } catch (error) {
+          console.error('Error obteniendo token:', error);
+        }
         return config;
       },
       (error) => {
@@ -64,32 +69,33 @@ class ApiClient {
       }
     );
 
-    // Response Interceptor - Manejar errores
+    // --- RESPONSE INTERCEPTOR (Manejar Errores Globales) ---
     this.client.interceptors.response.use(
       (response) => {
         if (__DEV__) {
-          console.log('📥 API Response:', {
-            status: response.status,
-            url: response.config.url,
-            data: response.data,
-          });
+          console.log(`✅ [API Success] ${response.status} - ${response.config.url}`);
         }
         return response;
       },
       async (error: AxiosError) => {
+        // Log detallado solo en desarrollo
         if (__DEV__) {
-          console.error('❌ API Error:', {
-            status: error.response?.status,
-            url: error.config?.url,
-            data: error.response?.data,
-          });
+          console.error(`❌ [API Error] ${error.response?.status} - ${error.config?.url}`, error.response?.data);
         }
 
-        // Si es 401, limpiar token y redirigir a login
+        // Manejo automático de sesión expirada (401)
         if (error.response?.status === 401) {
-          await AsyncStorage.removeItem('auth_token');
-          await AsyncStorage.removeItem('user_data');
-          // Aquí podrías emitir un evento para redirigir al login
+          console.warn('⚠️ Sesión expirada (401). Limpiando credenciales...');
+          
+          // Limpieza usando StorageHelper
+          await StorageHelper.removeItem('auth_token');
+          await StorageHelper.removeItem('user_data');
+
+          // NOTA: Aquí deberías disparar la navegación al Login.
+          // Como este archivo no es un componente React, la forma común es:
+          // 1. Usar una referencia de navegación global (NavigationRef).
+          // 2. O emitir un evento (DeviceEventEmitter).
+          // Ejemplo: NavigationService.navigate('Login');
         }
 
         return Promise.reject(error);
@@ -97,54 +103,59 @@ class ApiClient {
     );
   }
 
-  // Métodos HTTP
-  async get<T>(url: string, config?: AxiosRequestConfig) {
+  // -------------------------------------------------------------------------
+  // MÉTODOS PÚBLICOS
+  // -------------------------------------------------------------------------
+
+  async get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.client.get<T>(url, config);
     return response.data;
   }
 
-  async post<T>(url: string, data?: any, config?: AxiosRequestConfig) {
+  async post<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.client.post<T>(url, data, config);
     return response.data;
   }
 
-  async put<T>(url: string, data?: any, config?: AxiosRequestConfig) {
+  async put<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.client.put<T>(url, data, config);
     return response.data;
   }
 
-  async patch<T>(url: string, data?: any, config?: AxiosRequestConfig) {
+  async patch<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.client.patch<T>(url, data, config);
     return response.data;
   }
 
-  async delete<T>(url: string, config?: AxiosRequestConfig) {
+  async delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.client.delete<T>(url, config);
     return response.data;
   }
 
-  // Método para subir archivos
-  async upload<T>(url: string, formData: FormData, onProgress?: (progress: number) => void) {
+  // Método especial para subir imágenes/archivos
+  async upload<T>(url: string, formData: FormData, onProgress?: (percent: number) => void): Promise<T> {
     const response = await this.client.post<T>(url, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
       onUploadProgress: (progressEvent) => {
         if (onProgress && progressEvent.total) {
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          onProgress(percentCompleted);
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(percent);
         }
       },
     });
     return response.data;
   }
 
-  // Obtener la instancia de axios si se necesita
-  getClient() {
+  /**
+   * Permite acceder a la instancia original de axios si se requiere configuración avanzada
+   */
+  getClient(): AxiosInstance {
     return this.client;
   }
 }
 
-// Exportar instancia singleton
+// Exportamos una instancia única (Singleton) para usar en toda la app
 export const apiClient = new ApiClient();
 export default apiClient;

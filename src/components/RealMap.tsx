@@ -1,167 +1,176 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
-
-interface Vehicle {
-  id: number;
-  name: string;
-  latitude: number;
-  longitude: number;
-  status: string;
-  speed: string;
-}
+// Asegúrate de importar la interfaz desde tu archivo de datos
+import { Vehicle } from '../api/mockData'; 
 
 interface RealMapProps {
   vehicles: Vehicle[];
+  selectedVehicle: Vehicle | null; // Recibimos el vehículo seleccionado
   style?: any;
 }
 
-export default function RealMap({ vehicles, style }: RealMapProps) {
+export default function RealMap({ vehicles, selectedVehicle, style }: RealMapProps) {
   const mapRef = useRef<HTMLIFrameElement>(null);
-  const [mapLoaded, setMapLoaded] = useState(false);
+  const [isMapReady, setIsMapReady] = useState(false);
 
-  // Tu API Key de Google Maps (IMPORTANTE: Configúrala aquí o usa variables de entorno)
-  const API_KEY = 'AIzaSyB-x2Ix1eMVDuwtARoG-NsGm4rmfvCHdyM'; // Reemplazar con tu API key real
+  // ⚠️ TU API KEY AQUÍ
+  const API_KEY = 'AIzaSyB-x2Ix1eMVDuwtARoG-NsGm4rmfvCHdyM'; 
 
+  // 1. Inicializar mapa (Solo una vez)
   useEffect(() => {
-    if (Platform.OS === 'web' && mapRef.current && vehicles.length > 0) {
+    if (Platform.OS === 'web' && mapRef.current && !isMapReady) {
       initializeMap();
     }
-  }, [vehicles]);
+  }, []);
+
+  // 2. Escuchar cambios en la lista de vehículos (Simulación de movimiento)
+  useEffect(() => {
+    if (isMapReady && mapRef.current?.contentWindow) {
+      mapRef.current.contentWindow.postMessage({
+        type: 'UPDATE_VEHICLES',
+        payload: vehicles
+      }, '*');
+    }
+  }, [vehicles, isMapReady]);
+
+  // 3. ZOOM AL VEHÍCULO SELECCIONADO (Aquí estaba el problema antes)
+  useEffect(() => {
+    if (isMapReady && selectedVehicle && mapRef.current?.contentWindow) {
+      console.log("Zooming to ID:", selectedVehicle.id); // Debug
+      mapRef.current.contentWindow.postMessage({
+        type: 'FOCUS_VEHICLE',
+        payload: selectedVehicle.id // Enviamos solo el ID
+      }, '*');
+    }
+  }, [selectedVehicle, isMapReady]);
 
   const initializeMap = () => {
     const iframe = mapRef.current;
     if (!iframe) return;
 
-    // Calcular el centro del mapa basado en los vehículos
+    // Centro inicial
     const center = vehicles.length 
       ? { lat: vehicles[0].latitude, lng: vehicles[0].longitude }
-      : { lat: 20.5426093, lng: -103.2778923 };
+      : { lat: -34.6037, lng: -58.3816 };
 
-    // Crear HTML del mapa con Google Maps JavaScript API
     const htmlContent = `
       <!DOCTYPE html>
       <html>
         <head>
           <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            html, body { height: 100%; width: 100%; overflow: hidden; }
-            #map { height: 100%; width: 100%; }
-            .info-window {
-              font-family: Arial, sans-serif;
-              padding: 8px;
-            }
-            .info-window h3 {
-              margin: 0 0 8px 0;
-              color: #2c3e50;
-              font-size: 14px;
-            }
-            .info-window p {
-              margin: 4px 0;
-              font-size: 12px;
-              color: #555;
-            }
-            .info-window .status {
-              display: inline-block;
-              padding: 2px 8px;
-              border-radius: 12px;
-              font-size: 11px;
-              font-weight: bold;
-              margin-top: 4px;
-            }
-            .info-window .moving {
-              background: #27ae60;
-              color: white;
-            }
-            .info-window .stopped {
-              background: #e74c3c;
-              color: white;
-            }
+            html, body, #map { height: 100%; margin: 0; padding: 0; }
           </style>
         </head>
         <body>
           <div id="map"></div>
           <script>
             let map;
-            let markers = [];
-            
+            // CAMBIO 1: Usamos un objeto en lugar de array para buscar rápido por ID
+            let markers = {}; 
+            let infoWindows = {};
+
             function initMap() {
-              // Configurar el mapa
               map = new google.maps.Map(document.getElementById('map'), {
                 zoom: 12,
                 center: { lat: ${center.lat}, lng: ${center.lng} },
                 mapTypeId: 'roadmap',
-                styles: [
-                  {
-                    featureType: "poi",
-                    elementType: "labels",
-                    stylers: [{ visibility: "off" }]
-                  }
-                ],
-                streetViewControl: false,
-                mapTypeControl: true,
-                fullscreenControl: false,
+                disableDefaultUI: true,
+                zoomControl: true,
               });
 
-              // Agregar marcadores para cada vehículo
-              const vehicles = ${JSON.stringify(vehicles)};
+              // Avisar a React que estamos listos
+              window.parent.postMessage({ type: 'MAP_READY' }, '*');
               
-              vehicles.forEach(vehicle => {
-                const isMoving = vehicle.status === 'En movimiento';
-                
-                const marker = new google.maps.Marker({
-                  position: { lat: vehicle.latitude, lng: vehicle.longitude },
-                  map: map,
-                  title: vehicle.name,
-                  icon: {
-                    path: google.maps.SymbolPath.CIRCLE,
-                    scale: 8,
-                    fillColor: isMoving ? '#27ae60' : '#e74c3c',
-                    fillOpacity: 1,
-                    strokeColor: '#ffffff',
-                    strokeWeight: 2,
-                  },
-                  label: {
-                    text: vehicle.name.charAt(0),
-                    color: '#ffffff',
-                    fontSize: '12px',
-                    fontWeight: 'bold'
-                  }
-                });
+              // Carga inicial
+              const initialVehicles = ${JSON.stringify(vehicles)};
+              updateMarkers(initialVehicles);
+            }
 
-                const infoContent = \`
-                  <div class="info-window">
-                    <h3>\${vehicle.name}</h3>
-                    <p><strong>Ubicación:</strong> \${vehicle.location || 'Desconocida'}</p>
-                    <p><strong>Velocidad:</strong> \${vehicle.speed}</p>
-                    <span class="status \${isMoving ? 'moving' : 'stopped'}">
-                      \${vehicle.status}
-                    </span>
-                  </div>
-                \`;
-
-                const infoWindow = new google.maps.InfoWindow({
-                  content: infoContent
-                });
-
-                marker.addListener('click', () => {
-                  // Cerrar todas las ventanas de información abiertas
-                  markers.forEach(m => m.infoWindow.close());
-                  infoWindow.open(map, marker);
-                });
-
-                markers.push({ marker, infoWindow });
-              });
-
-              // Ajustar el mapa para mostrar todos los marcadores
-              if (vehicles.length > 1) {
-                const bounds = new google.maps.LatLngBounds();
-                vehicles.forEach(vehicle => {
-                  bounds.extend({ lat: vehicle.latitude, lng: vehicle.longitude });
-                });
-                map.fitBounds(bounds);
+            // Escuchar mensajes desde React
+            window.addEventListener('message', (event) => {
+              const { type, payload } = event.data;
+              
+              if (type === 'UPDATE_VEHICLES') {
+                updateMarkers(payload);
+              } 
+              else if (type === 'FOCUS_VEHICLE') {
+                focusMarker(payload);
               }
+            });
+
+            function updateMarkers(vehiclesData) {
+              vehiclesData.forEach(v => {
+                const latLng = { lat: v.latitude, lng: v.longitude };
+                const isMoving = v.status === 'active';
+
+                // Si ya existe el marcador, solo lo movemos
+                if (markers[v.id]) {
+                  markers[v.id].setPosition(latLng);
+                  
+                  // Actualizar icono (rotación)
+                  const icon = markers[v.id].getIcon();
+                  icon.rotation = v.heading || 0;
+                  markers[v.id].setIcon(icon);
+                  
+                } else {
+                  // Si no existe, lo creamos
+                  const marker = new google.maps.Marker({
+                    position: latLng,
+                    map: map,
+                    title: v.name,
+                    icon: {
+                      path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                      scale: 5,
+                      fillColor: isMoving ? '#27ae60' : '#e74c3c', // Verde o Rojo
+                      fillOpacity: 1,
+                      strokeColor: 'white',
+                      strokeWeight: 1,
+                      rotation: v.heading || 0,
+                    }
+                  });
+
+                  // Crear InfoWindow
+                  const content = \`
+                    <div style="font-family: Arial, sans-serif; padding: 5px;">
+                      <h3 style="margin: 0 0 5px;">\${v.name}</h3>
+                      <p style="margin: 0;">Vel: <b>\${v.speed} km/h</b></p>
+                      <p style="margin: 0; font-size: 12px; color: #666;">\${v.location}</p>
+                    </div>
+                  \`;
+                  
+                  const infoWindow = new google.maps.InfoWindow({ content });
+
+                  marker.addListener('click', () => {
+                    closeAllInfoWindows();
+                    infoWindow.open(map, marker);
+                  });
+
+                  // CAMBIO 2: Guardamos usando el ID como llave
+                  markers[v.id] = marker;
+                  infoWindows[v.id] = infoWindow;
+                }
+              });
+            }
+
+            function focusMarker(vehicleId) {
+              // CAMBIO 3: Buscamos directamente por ID
+              const marker = markers[vehicleId];
+              
+              if (marker) {
+                map.panTo(marker.getPosition());
+                map.setZoom(16); // Zoom más cercano
+                
+                // Abrimos su ventanita de información
+                closeAllInfoWindows();
+                if(infoWindows[vehicleId]) {
+                    infoWindows[vehicleId].open(map, marker);
+                }
+              }
+            }
+
+            function closeAllInfoWindows() {
+              Object.values(infoWindows).forEach(iw => iw.close());
             }
 
             window.initMap = initMap;
@@ -173,137 +182,50 @@ export default function RealMap({ vehicles, style }: RealMapProps) {
       </html>
     `;
 
-    // Inyectar el HTML en el iframe
     const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
     if (iframeDoc) {
       iframeDoc.open();
       iframeDoc.write(htmlContent);
       iframeDoc.close();
-      setMapLoaded(true);
     }
   };
+
+  // Listener para saber cuando el mapa cargó
+  useEffect(() => {
+    const handler = (event: any) => {
+      if (event.data?.type === 'MAP_READY') {
+        setIsMapReady(true);
+      }
+    };
+    if (Platform.OS === 'web') {
+      window.addEventListener('message', handler);
+      return () => window.removeEventListener('message', handler);
+    }
+  }, []);
 
   if (Platform.OS === 'web') {
     return (
       <View style={[styles.container, style]}>
-        {!API_KEY || API_KEY === 'TU_API_KEY_AQUI' ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorTitle}>⚠️ Configuración necesaria</Text>
-            <Text style={styles.errorText}>
-              Necesitas agregar tu Google Maps API Key en RealMap.tsx
-            </Text>
-            <Text style={styles.errorSteps}>
-              Pasos:
-              {'\n'}1. Ve a Google Cloud Console
-              {'\n'}2. Habilita "Maps JavaScript API"
-              {'\n'}3. Copia tu API Key
-              {'\n'}4. Reemplaza 'TU_API_KEY_AQUI' en el código
-            </Text>
-          </View>
+        {!API_KEY ? (
+          <Text style={{padding: 20}}>Falta API Key</Text>
         ) : (
-          <>
-            <iframe
-              ref={mapRef}
-              style={{
-                width: '100%',
-                height: '100%',
-                border: 'none',
-              }}
-              title="Google Maps"
-            />
-            
-          </>
+          <iframe
+            ref={mapRef}
+            style={{ width: '100%', height: '100%', border: 'none' }}
+            title="Google Maps"
+          />
         )}
       </View>
     );
   }
 
-  // Para móvil, mostrar mensaje o implementar react-native-maps
   return (
-    <View style={[styles.container, styles.mobileContainer, style]}>
-      <Text style={styles.mobileText}>
-        Vista de mapa disponible solo en versión web
-      </Text>
-      <Text style={styles.mobileSubtext}>
-        Para móvil, instala react-native-maps
-      </Text>
+    <View style={styles.container}>
+      <Text>Mapa solo disponible en Web</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    position: 'relative',
-    backgroundColor: '#e8f4f8',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-    backgroundColor: '#fff3cd',
-  },
-  errorTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#856404',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#856404',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  errorSteps: {
-    fontSize: 14,
-    color: '#856404',
-    backgroundColor: '#ffffff',
-    padding: 20,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: '#ffc107',
-    textAlign: 'left',
-  },
-  overlay: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  overlayTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 4,
-  },
-  overlaySubtitle: {
-    fontSize: 12,
-    color: '#7f8c8d',
-  },
-  mobileContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#ecf0f1',
-  },
-  mobileText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 8,
-  },
-  mobileSubtext: {
-    fontSize: 14,
-    color: '#7f8c8d',
-  },
+  container: { flex: 1, backgroundColor: '#eee' }
 });
