@@ -24,9 +24,9 @@ export interface Driver {
     id: number;
     name: string;
     plate: string;
-    brand: string | null;
-    model: string | null;
-  };
+    brand: string;
+    model: string;
+  } | null; // Puede ser null si no tiene asignado
 }
 
 export interface CreateDriverRequest {

@@ -181,7 +181,7 @@ class VehicleService {
       console.log('📝 Actualizando vehículo:', id, data);
       
       const response = await apiClient.put<{ success: boolean; data: Vehicle }>(
-        `/vehicles/${id}`,
+        `/vehicles/update-vehicles/${id}`,
         data
       );
       
@@ -320,7 +320,14 @@ class VehicleService {
   formatPlate(plate: string): string {
     return plate.toUpperCase().replace(/\s/g, '');
   }
-
+getStatusConfig(status: string) {
+  switch (status) {
+    case 'active': return { bg: '#dcfce7', color: '#166534' };
+    case 'inactive': return { bg: '#fee2e2', color: '#991b1b' };
+    case 'maintenance': return { bg: '#ffedd5', color: '#9a3412' };
+    default: return { bg: '#f3f4f6', color: '#374151' };
+  }
+}
   /**
    * Validar VIN
    */

@@ -1,5 +1,3 @@
-// src/screens/vehicles/VehicleFormScreen.tsx
-
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -11,6 +9,7 @@ import {
   Platform,
   TextInput,
   Alert,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,16 +21,16 @@ import deviceService, { Device } from '../../api/deviceService';
 export default function VehicleFormScreen() {
   const navigation = useNavigation();
   const route = useRoute();
+  
+  // 1. RECUPERAR PARÁMETROS
   const params = route.params as { mode: 'create' | 'edit'; vehicleId?: number } | undefined;
-
   const mode = params?.mode || 'create';
   const vehicleId = params?.vehicleId;
 
-  const [loading, setLoading] = useState(mode === 'edit');
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  // Campos del formulario
+  
+  // Form State
   const [name, setName] = useState('');
   const [plate, setPlate] = useState('');
   const [vin, setVin] = useState('');
@@ -41,10 +40,12 @@ export default function VehicleFormScreen() {
   const [year, setYear] = useState('');
   const [odometer, setOdometer] = useState('');
   const [status, setStatus] = useState<'active' | 'inactive' | 'maintenance'>('active');
-  const [driverId, setDriverId] = useState<number | null>(null);
-  const [deviceId, setDeviceId] = useState<number | null>(null);
+  
+  // ✅ CORRECCIÓN 1: Inicializar con string vacío para evitar warning "value prop should not be null"
+  const [driverId, setDriverId] = useState<number | string>(''); 
+  const [deviceId, setDeviceId] = useState<number | string>('');
 
-  // Listas
+  // Listas para los selectores
   const [availableDrivers, setAvailableDrivers] = useState<Driver[]>([]);
   const [availableDevices, setAvailableDevices] = useState<Device[]>([]);
 
@@ -54,72 +55,68 @@ export default function VehicleFormScreen() {
 
   const loadData = async () => {
     try {
-      // Cargar conductores y dispositivos disponibles
-      const [drivers, devices] = await Promise.all([
+      setLoading(true);
+
+      // Cargar catálogos
+      const [driversRes, devicesRes] = await Promise.allSettled([
         driverService.getAvailableDrivers(),
         deviceService.getAvailableDevices()
       ]);
+
+      const drivers = driversRes.status === 'fulfilled' ? driversRes.value : [];
+      const devices = devicesRes.status === 'fulfilled' ? devicesRes.value : [];
       
       setAvailableDrivers(drivers);
       setAvailableDevices(devices);
 
-      // Si es edición, cargar datos del vehículo
+      // SI ES EDICIÓN: CARGAR DATOS
       if (mode === 'edit' && vehicleId) {
+        console.log('✏️ Modo Edición: Cargando vehículo...', vehicleId);
         const vehicle = await vehicleService.getVehicle(vehicleId);
+        
         setName(vehicle.name);
         setPlate(vehicle.plate);
         setVin(vehicle.vin || '');
         setType(vehicle.type || '');
         setBrand(vehicle.brand || '');
         setModel(vehicle.model || '');
-        setYear(vehicle.year?.toString() || '');
-        setOdometer(vehicle.odometer?.toString() || '');
+        setYear(vehicle.year ? String(vehicle.year) : '');
+        setOdometer(vehicle.odometer ? String(vehicle.odometer) : '');
         setStatus(vehicle.status);
-        setDriverId(vehicle.driver_id);
-        setDeviceId(vehicle.device_id || null);
+        
+        // ✅ CORRECCIÓN 2: Si es null, lo pasamos a '' para el Picker
+        setDriverId(vehicle.driver_id || '');
+        setDeviceId(vehicle.device_id || '');
+
+        // Agregar conductor actual a la lista si existe
+        if (vehicle.driver) {
+           const exists = drivers.find(d => d.id === vehicle.driver?.id);
+           if (!exists) {
+             setAvailableDrivers(prev => [vehicle.driver!, ...prev]);
+           }
+        }
       }
+
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      Alert.alert('Error', 'No se pudieron cargar los datos: ' + err.message);
+      navigation.goBack();
     } finally {
       setLoading(false);
     }
   };
 
-  const validateForm = (): boolean => {
-    if (!name.trim()) {
-      Alert.alert('Error', 'El nombre es requerido');
-      return false;
-    }
-
-    if (!plate.trim()) {
-      Alert.alert('Error', 'Las placas son requeridas');
-      return false;
-    }
-
-    if (!vehicleService.validatePlate(plate)) {
-      Alert.alert('Error', 'Formato de placa inválido (ej: ABC-123-XYZ)');
-      return false;
-    }
-
-    if (vin && !vehicleService.validateVIN(vin)) {
-      Alert.alert('Error', 'VIN debe tener 17 caracteres');
-      return false;
-    }
-
-    if (year && (parseInt(year) < 1900 || parseInt(year) > new Date().getFullYear() + 1)) {
-      Alert.alert('Error', 'Año inválido');
-      return false;
-    }
-
-    return true;
-  };
-
   const handleSave = async () => {
-    if (!validateForm()) return;
+    if (!name.trim() || !plate.trim()) {
+      Alert.alert('Campos requeridos', 'Por favor completa el Nombre y la Placa.');
+      return;
+    }
 
     try {
       setSaving(true);
-      setError('');
+      
+      // ✅ CORRECCIÓN 3: Convertir strings vacíos a undefined/null para enviar al backend
+      const finalDriverId = driverId === '' ? undefined : Number(driverId);
+      const finalDeviceId = deviceId === '' ? undefined : Number(deviceId);
 
       const data: CreateVehicleRequest = {
         name: name.trim(),
@@ -131,387 +128,287 @@ export default function VehicleFormScreen() {
         year: year ? parseInt(year) : undefined,
         odometer: odometer ? parseInt(odometer) : undefined,
         status,
-        driver_id: driverId || undefined,
-        device_id: deviceId || undefined,
+        driver_id: finalDriverId,
+        device_id: finalDeviceId,
       };
+
+      console.log('📤 Enviando datos:', data);
 
       if (mode === 'create') {
         await vehicleService.createVehicle(data);
-        
-        // Primero navegar de regreso
-        navigation.goBack();
-        
-        // Luego mostrar el alert con un pequeño delay
-        setTimeout(() => {
-          Alert.alert('Éxito', 'Vehículo creado correctamente');
-        }, 100);
-        
+        Alert.alert('Éxito', 'Vehículo creado correctamente');
       } else if (vehicleId) {
         await vehicleService.updateVehicle(vehicleId, data);
-        
-        // Primero navegar de regreso
-        navigation.goBack();
-        
-        // Luego mostrar el alert con un pequeño delay
-        setTimeout(() => {
-          Alert.alert('Éxito', 'Vehículo actualizado correctamente');
-        }, 100);
+        Alert.alert('Éxito', 'Vehículo actualizado correctamente');
       }
+      
+      navigation.goBack();
     } catch (err: any) {
-      setError(err.message);
       Alert.alert('Error', err.message);
+    } finally {
       setSaving(false);
     }
   };
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>
-            {mode === 'create' ? 'Nuevo Vehículo' : 'Editar Vehículo'}
-          </Text>
-          <View style={{ width: 24 }} />
-        </View>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#226bfc" />
-        </View>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#226bfc" />
+        <Text style={{marginTop: 10, color: '#6b7280'}}>Cargando información...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
+    <KeyboardAvoidingView 
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      {/* HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="close" size={24} color="#1f2937" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
           {mode === 'create' ? 'Nuevo Vehículo' : 'Editar Vehículo'}
         </Text>
-        <View style={{ width: 24 }} />
+        <TouchableOpacity onPress={handleSave} disabled={saving} style={styles.saveHeaderBtn}>
+          {saving ? <ActivityIndicator color="#226bfc" /> : <Text style={styles.saveHeaderText}>Guardar</Text>}
+        </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {error ? (
-          <View style={styles.errorBox}>
-            <Ionicons name="alert-circle" size={20} color="#ef4444" />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null}
-
-        {/* Formulario */}
-        <View style={styles.form}>
-          {/* Nombre */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>
-              Nombre / Alias <Text style={styles.required}>*</Text>
+      <ScrollView contentContainerStyle={styles.content}>
+        
+        {/* PREVIEW PLACA */}
+        <View style={styles.platePreviewContainer}>
+          <View style={styles.plateFrame}>
+            <View style={styles.plateHeader} />
+            <Text style={styles.plateText}>
+              {plate.length > 0 ? plate.toUpperCase() : 'AAA-000'}
             </Text>
-            <TextInput
-              style={styles.input}
-              placeholder="ej: Camioneta 1"
-              value={name}
-              onChangeText={setName}
-              editable={!saving}
-            />
           </View>
+          <Text style={styles.helperText}>{mode === 'edit' ? 'Editando unidad' : 'Vista previa de la placa'}</Text>
+        </View>
 
-          {/* Placas */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>
-              Placas <Text style={styles.required}>*</Text>
-            </Text>
-            <TextInput
-              style={styles.input}
-              placeholder="ej: ABC-123-XYZ"
-              value={plate}
-              onChangeText={setPlate}
-              autoCapitalize="characters"
-              editable={!saving}
+        {/* SECCIÓN 1: IDENTIDAD */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>IDENTIDAD</Text>
+          <View style={styles.card}>
+            <InputGroup 
+              label="Nombre / Alias" 
+              placeholder="Ej. Unidad 01" 
+              value={name} 
+              onChangeText={setName} 
+              icon="car-sport-outline"
             />
-            <Text style={styles.hint}>Formato: ABC-123-XYZ o ABC1234</Text>
-          </View>
-
-          {/* VIN */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>VIN (Número de Serie)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="17 caracteres"
-              value={vin}
-              onChangeText={setVin}
-              autoCapitalize="characters"
+            <InputGroup 
+              label="Placas" 
+              placeholder="Ej. JRV1138" 
+              value={plate} 
+              onChangeText={(t) => setPlate(t.toUpperCase())} 
+              icon="grid-outline"
+            />
+            <InputGroup 
+              label="VIN (Opcional)" 
+              placeholder="Número de serie" 
+              value={vin} 
+              onChangeText={(t) => setVin(t.toUpperCase())} 
               maxLength={17}
-              editable={!saving}
+              icon="barcode-outline"
+              last
             />
-          </View>
-
-          {/* Tipo */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Tipo de Vehículo</Text>
-            <View style={styles.pickerContainer}>
-              <Picker
-                selectedValue={type}
-                onValueChange={setType}
-                enabled={!saving}
-                style={styles.picker}
-              >
-                <Picker.Item label="Seleccionar..." value="" />
-                {VEHICLE_TYPES.map((t) => (
-                  <Picker.Item key={t.value} label={t.label} value={t.value} />
-                ))}
-              </Picker>
-            </View>
-          </View>
-
-          {/* Marca */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Marca</Text>
-            <View style={styles.pickerContainer}>
-              <Picker
-                selectedValue={brand}
-                onValueChange={setBrand}
-                enabled={!saving}
-                style={styles.picker}
-              >
-                <Picker.Item label="Seleccionar..." value="" />
-                {VEHICLE_BRANDS.map((b) => (
-                  <Picker.Item key={b} label={b} value={b} />
-                ))}
-              </Picker>
-            </View>
-          </View>
-
-          {/* Modelo y Año */}
-          <View style={styles.formRow}>
-            <View style={[styles.formGroup, { flex: 1 }]}>
-              <Text style={styles.label}>Modelo</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="ej: F-150"
-                value={model}
-                onChangeText={setModel}
-                editable={!saving}
-              />
-            </View>
-
-            <View style={[styles.formGroup, { flex: 1 }]}>
-              <Text style={styles.label}>Año</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="2024"
-                value={year}
-                onChangeText={setYear}
-                keyboardType="numeric"
-                maxLength={4}
-                editable={!saving}
-              />
-            </View>
-          </View>
-
-          {/* Odómetro */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Odómetro (km)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="15000"
-              value={odometer}
-              onChangeText={setOdometer}
-              keyboardType="numeric"
-              editable={!saving}
-            />
-          </View>
-
-          {/* Estado */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Estado</Text>
-            <View style={styles.pickerContainer}>
-              <Picker
-                selectedValue={status}
-                onValueChange={(value) => setStatus(value as any)}
-                enabled={!saving}
-                style={styles.picker}
-              >
-                <Picker.Item label="Activo" value="active" />
-                <Picker.Item label="Inactivo" value="inactive" />
-                <Picker.Item label="Mantenimiento" value="maintenance" />
-              </Picker>
-            </View>
-          </View>
-
-          {/* Asignar Conductor */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Asignar Conductor</Text>
-            <View style={styles.pickerContainer}>
-              <Picker
-                selectedValue={driverId}
-                onValueChange={(value) => setDriverId(value as number | null)}
-                enabled={!saving}
-                style={styles.picker}
-              >
-                <Picker.Item label="Sin conductor" value={null} />
-                {availableDrivers.map((driver) => (
-                  <Picker.Item
-                    key={driver.id}
-                    label={driver.account?.name || `Conductor ${driver.id}`}
-                    value={driver.id}
-                  />
-                ))}
-              </Picker>
-            </View>
-            <Text style={styles.hint}>
-              {availableDrivers.length === 0 
-                ? 'No hay conductores disponibles'
-                : `${availableDrivers.length} conductor(es) disponible(s)`
-              }
-            </Text>
-          </View>
-
-          {/* Asignar Dispositivo GPS */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Asignar Dispositivo GPS</Text>
-            <View style={styles.pickerContainer}>
-              <Picker
-                selectedValue={deviceId}
-                onValueChange={(value) => setDeviceId(value as number | null)}
-                enabled={!saving}
-                style={styles.picker}
-              >
-                <Picker.Item label="Sin dispositivo GPS" value={null} />
-                {availableDevices.map((device) => (
-                  <Picker.Item
-                    key={device.id}
-                    label={`${device.imei}${device.model ? ` - ${device.model}` : ''}`}
-                    value={device.id}
-                  />
-                ))}
-              </Picker>
-            </View>
-            <Text style={styles.hint}>
-              {availableDevices.length === 0 
-                ? 'No hay dispositivos GPS disponibles'
-                : `${availableDevices.length} dispositivo(s) disponible(s)`
-              }
-            </Text>
           </View>
         </View>
 
-        {/* Botones */}
-        <View style={styles.buttonsContainer}>
-          <TouchableOpacity
-            style={styles.cancelButton}
-            onPress={() => navigation.goBack()}
-            disabled={saving}
-          >
-            <Text style={styles.cancelButtonText}>Cancelar</Text>
-          </TouchableOpacity>
+        {/* SECCIÓN 2: DETALLES */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>DETALLES TÉCNICOS</Text>
+          <View style={styles.card}>
+            <View style={styles.row}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.label}>Marca</Text>
+                <View style={styles.pickerWrapper}>
+                  <Picker selectedValue={brand} onValueChange={setBrand} style={styles.picker}>
+                    <Picker.Item label="Seleccionar" value="" color="#9ca3af" />
+                    {VEHICLE_BRANDS.map(b => <Picker.Item key={b} label={b} value={b} />)}
+                  </Picker>
+                </View>
+              </View>
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text style={styles.label}>Tipo</Text>
+                <View style={styles.pickerWrapper}>
+                  <Picker selectedValue={type} onValueChange={setType} style={styles.picker}>
+                    <Picker.Item label="Seleccionar" value="" color="#9ca3af" />
+                    {VEHICLE_TYPES.map(t => <Picker.Item key={t.value} label={t.label} value={t.value} />)}
+                  </Picker>
+                </View>
+              </View>
+            </View>
 
-          <TouchableOpacity
-            style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-            onPress={handleSave}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="checkmark" size={20} color="#fff" />
-                <Text style={styles.saveButtonText}>
-                  {mode === 'create' ? 'Crear Vehículo' : 'Guardar Cambios'}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
+            <View style={[styles.row, { marginTop: 16 }]}>
+              <View style={{ flex: 2, marginRight: 12 }}> 
+                <InputGroup 
+                  label="Modelo" 
+                  placeholder="Ej. Versa" 
+                  value={model} 
+                  onChangeText={setModel} 
+                  noMargin 
+                />
+              </View>
+              <View style={{ flex: 1 }}> 
+                <InputGroup 
+                  label="Año" 
+                  placeholder="2024" 
+                  value={year} 
+                  onChangeText={setYear} 
+                  keyboardType="numeric" 
+                  maxLength={4} 
+                  noMargin 
+                />
+              </View>
+            </View>
+          </View>
         </View>
+
+        {/* SECCIÓN 3: OPERACIÓN */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>OPERACIÓN Y ASIGNACIÓN</Text>
+          <View style={styles.card}>
+            
+            <View style={styles.formItem}>
+              <Text style={styles.label}>Estado del Vehículo</Text>
+              <View style={styles.pickerWrapper}>
+                <Picker selectedValue={status} onValueChange={setStatus} style={styles.picker}>
+                  <Picker.Item label="🟢 Activo" value="active" />
+                  <Picker.Item label="🔴 Inactivo" value="inactive" />
+                  <Picker.Item label="🟠 Mantenimiento" value="maintenance" />
+                </Picker>
+              </View>
+            </View>
+
+            <View style={[styles.formItem, { marginTop: 16 }]}>
+              <Text style={styles.label}>Conductor Asignado</Text>
+              <View style={styles.pickerWrapper}>
+                <Picker 
+                  selectedValue={driverId} 
+                  onValueChange={setDriverId} 
+                  style={styles.picker}
+                >
+                  {/* ✅ CORRECCIÓN 4: value="" en lugar de null */}
+                  <Picker.Item label="Sin conductor" value="" color="#9ca3af" />
+                  {availableDrivers.map(d => (
+                    <Picker.Item key={d.id} label={d.account?.name || `ID: ${d.id}`} value={d.id} />
+                  ))}
+                </Picker>
+              </View>
+            </View>
+
+            <View style={[styles.formItem, { marginTop: 16 }]}>
+              <Text style={styles.label}>Dispositivo GPS</Text>
+              <View style={styles.pickerWrapper}>
+                <Picker 
+                  selectedValue={deviceId} 
+                  onValueChange={setDeviceId} 
+                  style={styles.picker}
+                >
+                   {/* ✅ CORRECCIÓN 5: value="" en lugar de null */}
+                  <Picker.Item label="Sin dispositivo" value="" color="#9ca3af" />
+                  {availableDevices.map(d => (
+                    <Picker.Item key={d.id} label={`${d.imei} (${d.model || 'GPS'})`} value={d.id} />
+                  ))}
+                </Picker>
+              </View>
+            </View>
+
+            <View style={{ marginTop: 16 }}>
+              <InputGroup 
+                label="Odómetro Actual (km)" 
+                placeholder="0" 
+                value={odometer} 
+                onChangeText={setOdometer} 
+                keyboardType="numeric" 
+                icon="speedometer-outline"
+                last
+              />
+            </View>
+
+          </View>
+        </View>
+
+        <View style={{ height: 40 }} />
       </ScrollView>
-    </View>
+
+      {/* FOOTER FLOTANTE (Solo Móvil) */}
+      {Platform.OS !== 'web' && (
+        <View style={styles.footer}>
+          <TouchableOpacity style={styles.footerBtn} onPress={handleSave} disabled={saving}>
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.footerBtnText}>Guardar Cambios</Text>}
+          </TouchableOpacity>
+        </View>
+      )}
+    </KeyboardAvoidingView>
   );
 }
 
+// --- SUBCOMPONENTES ---
+const InputGroup = ({ label, placeholder, value, onChangeText, icon, keyboardType, maxLength, last, noMargin }: any) => (
+  <View style={[styles.inputContainer, !last && !noMargin && { borderBottomWidth: 1, borderBottomColor: '#f3f4f6', paddingBottom: 12, marginBottom: 12 }]}>
+    <Text style={styles.label}>{label}</Text>
+    <View style={styles.inputWrapper}>
+      {icon && <Ionicons name={icon} size={20} color="#9ca3af" style={{ marginRight: 10 }} />}
+      <TextInput
+        style={styles.input}
+        placeholder={placeholder}
+        value={value}
+        onChangeText={onChangeText}
+        placeholderTextColor="#d1d5db"
+        keyboardType={keyboardType}
+        maxLength={maxLength}
+      />
+    </View>
+  </View>
+);
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9fafb' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'web' ? 20 : 60,
-    paddingBottom: 20,
-    backgroundColor: '#226bfc',
-  },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  content: { flex: 1 },
-  contentContainer: { padding: 20 },
-  errorBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fee2e2',
-    borderLeftWidth: 4,
-    borderLeftColor: '#ef4444',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    gap: 8,
+  header: { 
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', 
+    paddingHorizontal: 16, paddingTop: Platform.OS === 'web' ? 16 : 60, paddingBottom: 16,
+    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e5e7eb'
   },
-  errorText: { flex: 1, fontSize: 14, color: '#991b1b' },
-  form: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+  backButton: { padding: 8, borderRadius: 8, backgroundColor: '#f3f4f6' },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#1f2937' },
+  saveHeaderBtn: { paddingVertical: 8, paddingHorizontal: 12 },
+  saveHeaderText: { color: '#226bfc', fontWeight: 'bold', fontSize: 16 },
+  content: { padding: 20, paddingBottom: 100 },
+  platePreviewContainer: { alignItems: 'center', marginBottom: 24 },
+  plateFrame: {
+    backgroundColor: '#fff', borderWidth: 4, borderColor: '#1f2937', borderRadius: 8,
+    paddingHorizontal: 24, paddingVertical: 12, alignItems: 'center', minWidth: 180,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 4
   },
-  formGroup: { marginBottom: 20 },
-  formRow: { flexDirection: 'row', gap: 12 },
-  label: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  required: { color: '#ef4444' },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 12,
-    padding: Platform.OS === 'web' ? 16 : 12,
-    fontSize: 16,
-    color: '#1f2937',
-    backgroundColor: '#fff',
+  plateHeader: { width: 40, height: 4, backgroundColor: '#fbbf24', borderRadius: 2, marginBottom: 6 },
+  plateText: { fontSize: 28, fontWeight: 'bold', color: '#1f2937', letterSpacing: 2, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  helperText: { marginTop: 8, fontSize: 12, color: '#9ca3af' },
+  section: { marginBottom: 24 },
+  sectionTitle: { fontSize: 13, fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', marginBottom: 8, marginLeft: 4, letterSpacing: 0.5 },
+  card: { backgroundColor: '#fff', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#e5e7eb' },
+  inputContainer: {},
+  label: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center' },
+  input: { flex: 1, fontSize: 16, color: '#1f2937', padding: 0 },
+  row: { flexDirection: 'row' },
+  formItem: {},
+  pickerWrapper: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, backgroundColor: '#f9fafb', overflow: 'hidden' },
+  picker: { height: Platform.OS === 'web' ? 45 : 50, width: '100%' },
+  footer: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: '#fff', padding: 16, borderTopWidth: 1, borderTopColor: '#e5e7eb'
   },
-  hint: { fontSize: 12, color: '#6b7280', marginTop: 4 },
-  pickerContainer: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#fff',
+  footerBtn: {
+    backgroundColor: '#226bfc', borderRadius: 12, paddingVertical: 16, alignItems: 'center',
+    shadowColor: '#226bfc', shadowOpacity: 0.3, shadowRadius: 8, elevation: 4
   },
-  picker: { height: Platform.OS === 'web' ? 50 : 150 },
-  buttonsContainer: { flexDirection: 'row', gap: 12, marginTop: 24 },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-  },
-  cancelButtonText: { fontSize: 16, fontWeight: '600', color: '#6b7280' },
-  saveButton: {
-    flex: 1,
-    flexDirection: 'row',
-    backgroundColor: '#226bfc',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  saveButtonDisabled: { opacity: 0.5 },
-  saveButtonText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
+  footerBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
 });

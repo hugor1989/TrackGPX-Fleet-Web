@@ -19,7 +19,7 @@ const getApiUrl = (): string => {
   return Platform.select({
     ios: 'http://127.0.0.1:8000/api',      // Simulador iOS
     android: 'http://10.0.2.2:8000/api',   // Emulador Android
-    web: 'https://backend-flotillas.track-gpx.com/api',      // Navegador Web
+    web: 'http://127.0.0.1:8000/api',      // Navegador Web
     default: 'http://127.0.0.1:8000/api',
   }) as string;
 };

@@ -1,6 +1,4 @@
-// src/screens/payments/PaymentMethodsScreen.tsx
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,12 +11,17 @@ import {
   Alert,
   Modal,
   KeyboardAvoidingView,
+  Image
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import paymentService, { PaymentMethod } from '../../api/paymentService';
 
-// Declaración global de OpenPay para TypeScript
+// --- CONFIGURACIÓN ---
+const OPENPAY_ID = 'm5f8bj6cvaxndcjkoun6';
+const OPENPAY_PK = 'pk_09fab58b510845d6978e7eeeee5e0b90';
+
+// Declaración global para TS
 declare global {
   interface Window {
     OpenPay: any;
@@ -27,43 +30,33 @@ declare global {
 
 export default function PaymentMethodsScreen() {
   const navigation = useNavigation();
-
   const [loading, setLoading] = useState(true);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
-  const [error, setError] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
 
-  useEffect(() => {
-    loadPaymentMethods();
-  }, []);
+  // Recargar al entrar a la pantalla
+  useFocusEffect(
+    useCallback(() => {
+      loadPaymentMethods();
+    }, [])
+  );
 
   const loadPaymentMethods = async () => {
     try {
       setLoading(true);
-      setError('');
       const methods = await paymentService.getPaymentMethods();
       setPaymentMethods(methods);
     } catch (err: any) {
-      setError(err.message);
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSetDefault = async (cardId: string) => {
-    try {
-      await paymentService.setDefaultPaymentMethod(cardId);
-      await loadPaymentMethods();
-      Alert.alert('Éxito', 'Tarjeta predeterminada actualizada');
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
-    }
-  };
-
   const handleDelete = (card: PaymentMethod) => {
     Alert.alert(
-      'Eliminar Tarjeta',
-      `¿Estás seguro de eliminar la tarjeta •••• ${card.card.last4}?`,
+      'Eliminar tarjeta',
+      `¿Deseas eliminar la terminación ••${card.card.last4}?`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -71,11 +64,12 @@ export default function PaymentMethodsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              setLoading(true);
               await paymentService.deletePaymentMethod(card.id);
               await loadPaymentMethods();
-              Alert.alert('Éxito', 'Tarjeta eliminada correctamente');
             } catch (err: any) {
               Alert.alert('Error', err.message);
+              setLoading(false);
             }
           },
         },
@@ -83,35 +77,21 @@ export default function PaymentMethodsScreen() {
     );
   };
 
-  const getCardIcon = (brand: string) => {
-    const brandLower = brand.toLowerCase();
-    if (brandLower.includes('visa')) return 'card';
-    if (brandLower.includes('mastercard')) return 'card';
-    if (brandLower.includes('amex') || brandLower.includes('american')) return 'card';
-    return 'card-outline';
+  const handleSetDefault = async (cardId: string) => {
+    try {
+      setLoading(true);
+      await paymentService.setDefaultPaymentMethod(cardId);
+      await loadPaymentMethods();
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+      setLoading(false);
+    }
   };
 
-  const getCardColor = (brand: string) => {
-    const brandLower = brand.toLowerCase();
-    if (brandLower.includes('visa')) return '#1434CB';
-    if (brandLower.includes('mastercard')) return '#EB001B';
-    if (brandLower.includes('amex') || brandLower.includes('american')) return '#006FCF';
-    return '#6b7280';
-  };
-
-  if (loading) {
+  if (loading && paymentMethods.length === 0) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Métodos de Pago</Text>
-          <View style={{ width: 24 }} />
-        </View>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#226bfc" />
-        </View>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#226bfc" />
       </View>
     );
   }
@@ -120,110 +100,40 @@ export default function PaymentMethodsScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Métodos de Pago</Text>
-        <TouchableOpacity onPress={() => setShowAddModal(true)}>
+        <Text style={styles.headerTitle}>Billetera</Text>
+        <TouchableOpacity onPress={() => setShowAddModal(true)} style={styles.headerAddBtn}>
           <Ionicons name="add" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {error ? (
-          <View style={styles.errorBox}>
-            <Ionicons name="alert-circle" size={20} color="#ef4444" />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null}
-
+      <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
         {paymentMethods.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="card-outline" size={64} color="#9ca3af" />
-            <Text style={styles.emptyTitle}>Sin métodos de pago</Text>
-            <Text style={styles.emptyText}>
-              Agrega una tarjeta para activar dispositivos GPS y gestionar suscripciones
-            </Text>
-            <TouchableOpacity style={styles.addButton} onPress={() => setShowAddModal(true)}>
-              <Ionicons name="add" size={24} color="#fff" />
-              <Text style={styles.addButtonText}>Agregar Tarjeta</Text>
-            </TouchableOpacity>
-          </View>
+          <EmptyState onAdd={() => setShowAddModal(true)} />
         ) : (
-          <View style={styles.cardsContainer}>
+          <View style={styles.cardsList}>
             {paymentMethods.map((method) => (
-              <View key={method.id} style={styles.cardItem}>
-                <View style={styles.cardHeader}>
-                  <View style={styles.cardBrand}>
-                    <View
-                      style={[
-                        styles.cardIconContainer,
-                        { backgroundColor: getCardColor(method.card.brand) },
-                      ]}
-                    >
-                      <Ionicons name={getCardIcon(method.card.brand)} size={24} color="#fff" />
-                    </View>
-                    <View>
-                      <Text style={styles.cardBrandText}>
-                        {method.card.brand.charAt(0).toUpperCase() + method.card.brand.slice(1)}
-                      </Text>
-                      <Text style={styles.cardNumber}>•••• {method.card.last4}</Text>
-                    </View>
-                  </View>
-
-                  {method.is_default && (
-                    <View style={styles.defaultBadge}>
-                      <Text style={styles.defaultText}>Predeterminada</Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={styles.cardDetails}>
-                  <View style={styles.cardDetail}>
-                    <Ionicons name="person-outline" size={16} color="#6b7280" />
-                    <Text style={styles.cardDetailText}>{method.card.holder_name}</Text>
-                  </View>
-                  <View style={styles.cardDetail}>
-                    <Ionicons name="calendar-outline" size={16} color="#6b7280" />
-                    <Text style={styles.cardDetailText}>
-                      {String(method.card.exp_month).padStart(2, '0')}/{method.card.exp_year}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.cardActions}>
-                  {!method.is_default && (
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => handleSetDefault(method.id)}
-                    >
-                      <Ionicons name="checkmark-circle-outline" size={20} color="#226bfc" />
-                      <Text style={styles.actionButtonText}>Predeterminada</Text>
-                    </TouchableOpacity>
-                  )}
-
-                  <TouchableOpacity
-                    style={styles.actionButtonDanger}
-                    onPress={() => handleDelete(method)}
-                  >
-                    <Ionicons name="trash-outline" size={20} color="#ef4444" />
-                    <Text style={styles.actionButtonDangerText}>Eliminar</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+              <CreditCardItem
+                key={method.id}
+                method={method}
+                onDelete={() => handleDelete(method)}
+                onSetDefault={() => handleSetDefault(method.id)}
+              />
             ))}
           </View>
         )}
-
-        <View style={styles.infoBox}>
-          <Ionicons name="information-circle-outline" size={20} color="#3b82f6" />
-          <Text style={styles.infoText}>
-            La tarjeta predeterminada se usará para renovaciones automáticas de suscripciones
-          </Text>
-        </View>
       </ScrollView>
 
-      {/* Modal para agregar tarjeta */}
+      {/* FAB solo si hay tarjetas (para añadir más rápido) */}
+      {paymentMethods.length > 0 && (
+        <TouchableOpacity style={styles.fab} onPress={() => setShowAddModal(true)}>
+          <Ionicons name="add" size={30} color="#fff" />
+        </TouchableOpacity>
+      )}
+
+      {/* Modal Agregar Tarjeta */}
       <AddCardModal
         visible={showAddModal}
         onClose={() => setShowAddModal(false)}
@@ -232,340 +142,271 @@ export default function PaymentMethodsScreen() {
           await loadPaymentMethods();
         }}
       />
-
-      {/* Botón flotante para agregar (solo si hay tarjetas) */}
-      {paymentMethods.length > 0 && (
-        <TouchableOpacity style={styles.fab} onPress={() => setShowAddModal(true)}>
-          <Ionicons name="add" size={32} color="#fff" />
-        </TouchableOpacity>
-      )}
     </View>
   );
 }
 
-// Modal para agregar tarjeta con OpenPay
-function AddCardModal({
-  visible,
-  onClose,
-  onSuccess,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onSuccess: () => void;
-}) {
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [deviceSessionId, setDeviceSessionId] = useState('');
+// --- SUBCOMPONENTES ---
 
-  // Form fields
-  const [cardNumber, setCardNumber] = useState('');
-  const [holderName, setHolderName] = useState('');
-  const [expirationMonth, setExpirationMonth] = useState('');
-  const [expirationYear, setExpirationYear] = useState('');
-  const [cvv, setCvv] = useState('');
+// 1. Tarjeta Visual Estilo "Wallet"
+const CreditCardItem = ({ method, onDelete, onSetDefault }: any) => {
+  const { brand, last4, holder_name, exp_month, exp_year } = method.card;
+  const isDefault = method.is_default;
+
+  // Color según marca
+  const getCardStyle = (brandName: string) => {
+    const b = brandName.toLowerCase();
+    if (b.includes('visa')) return { bg: '#1a1f71', logo: 'logo-visa' }; // Azul Visa
+    if (b.includes('master')) return { bg: '#252525', logo: 'logo-mastercard' }; // Negro Master
+    if (b.includes('amex')) return { bg: '#006fcf', logo: 'logo-amex' }; // Azul Amex
+    return { bg: '#4b5563', logo: 'card' }; // Gris Genérico
+  };
+
+  const style = getCardStyle(brand);
+
+  return (
+    <View style={styles.cardWrapper}>
+      {/* Tarjeta Visual */}
+      <View style={[styles.visualCard, { backgroundColor: style.bg }]}>
+        <View style={styles.visualCardTop}>
+          {/* Chip Simulado */}
+          <View style={styles.cardChip} />
+          {isDefault && <View style={styles.defaultBadge}><Text style={styles.defaultText}>Predeterminada</Text></View>}
+        </View>
+        
+        <View style={styles.visualCardNumber}>
+          <Text style={styles.cardNumberText}>•••• •••• •••• {last4}</Text>
+        </View>
+
+        <View style={styles.visualCardBottom}>
+          <View>
+            <Text style={styles.cardLabel}>TITULAR</Text>
+            <Text style={styles.cardValue} numberOfLines={1}>{holder_name}</Text>
+          </View>
+          <View>
+            <Text style={styles.cardLabel}>EXPIRA</Text>
+            <Text style={styles.cardValue}>{String(exp_month).padStart(2,'0')}/{String(exp_year).slice(-2)}</Text>
+          </View>
+          {/* Marca (Texto o Icono) */}
+          <Text style={styles.brandText}>{brand.toUpperCase()}</Text>
+        </View>
+      </View>
+
+      {/* Acciones Debajo */}
+      <View style={styles.cardActions}>
+        {!isDefault && (
+          <TouchableOpacity onPress={onSetDefault} style={styles.actionBtn}>
+            <Text style={styles.actionTextPrimary}>Usar como principal</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity onPress={onDelete} style={styles.deleteBtn}>
+          <Ionicons name="trash-outline" size={18} color="#ef4444" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+// 2. Estado Vacío
+const EmptyState = ({ onAdd }: any) => (
+  <View style={styles.emptyContainer}>
+    <View style={styles.emptyIconBg}>
+      <Ionicons name="wallet-outline" size={60} color="#9ca3af" />
+    </View>
+    <Text style={styles.emptyTitle}>Tu billetera está vacía</Text>
+    <Text style={styles.emptyText}>Agrega una tarjeta para gestionar tus suscripciones fácilmente.</Text>
+    <TouchableOpacity style={styles.emptyBtn} onPress={onAdd}>
+      <Text style={styles.emptyBtnText}>Agregar Tarjeta</Text>
+    </TouchableOpacity>
+  </View>
+);
+
+// 3. Modal con OpenPay (Optimizado)
+function AddCardModal({ visible, onClose, onSuccess }: any) {
+  const [loading, setLoading] = useState(false);
+  const [deviceSessionId, setDeviceSessionId] = useState('');
+  const [error, setError] = useState('');
+
+  // Form
+  const [form, setForm] = useState({ number: '', name: '', month: '', year: '', cvv: '' });
 
   useEffect(() => {
     if (visible && Platform.OS === 'web') {
-      loadOpenPay();
+      initializeOpenPay();
     }
   }, [visible]);
 
-  const loadOpenPay = async () => {
+  const initializeOpenPay = async () => {
     try {
-      // Cargar scripts de OpenPay si no están cargados
       if (!window.OpenPay) {
-        await loadOpenPayScript();
+        // Cargar scripts dinámicamente
+        await loadScript('https://js.openpay.mx/openpay.v1.min.js');
+        await loadScript('https://js.openpay.mx/openpay-data.v1.min.js');
       }
-
-      // Inicializar OpenPay
+      
       if (window.OpenPay) {
-
-        window.OpenPay.setId('m5f8bj6cvaxndcjkoun6'); // Tu merchant ID
-        window.OpenPay.setApiKey('pk_09fab58b510845d6978e7eeeee5e0b90'); // Tu API key
-        window.OpenPay.setSandboxMode(true);
-
-        // Generar device session ID
+        window.OpenPay.setId(OPENPAY_ID);
+        window.OpenPay.setApiKey(OPENPAY_PK);
+        window.OpenPay.setSandboxMode(true); // Cambiar a false en producción
         const sessionId = window.OpenPay.deviceData.setup();
         setDeviceSessionId(sessionId);
-        console.log('✅ OpenPay inicializado, device session:', sessionId);
       }
-    } catch (err) {
-      console.error('❌ Error cargando OpenPay:', err);
+    } catch (e) {
+      console.error("Error OpenPay init", e);
     }
   };
 
-  const loadOpenPayScript = (): Promise<void> => {
+  const loadScript = (src: string) => {
     return new Promise((resolve, reject) => {
-      if (typeof document === 'undefined') {
-        resolve();
-        return;
-      }
-
-      // Verificar si ya está cargado
-      if (window.OpenPay) {
-        resolve();
-        return;
-      }
-
-      // Cargar OpenPay.js
-      const script1 = document.createElement('script');
-      script1.src = 'https://js.openpay.mx/openpay.v1.min.js';
-      script1.async = true;
-      script1.onload = () => {
-        // Cargar OpenPay Data
-        const script2 = document.createElement('script');
-        script2.src = 'https://js.openpay.mx/openpay-data.v1.min.js';
-        script2.async = true;
-        script2.onload = () => resolve();
-        script2.onerror = () => reject(new Error('Error cargando OpenPay Data'));
-        document.head.appendChild(script2);
-      };
-      script1.onerror = () => reject(new Error('Error cargando OpenPay'));
-      document.head.appendChild(script1);
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
     });
   };
 
-  const handleAddCard = async () => {
+  const handleSubmit = async () => {
     setError('');
-
-    // Validaciones
-    if (!cardNumber || cardNumber.replace(/\s/g, '').length < 15) {
-      setError('Número de tarjeta inválido');
+    // Validaciones simples
+    if (form.number.length < 15 || !form.name || !form.cvv) {
+      setError('Por favor verifica los datos de la tarjeta.');
       return;
     }
 
-    if (!holderName.trim()) {
-      setError('Nombre del titular requerido');
-      return;
-    }
-
-    if (!expirationMonth || !expirationYear) {
-      setError('Fecha de expiración inválida');
-      return;
-    }
-
-    if (!cvv || cvv.length < 3) {
-      setError('CVV inválido');
-      return;
-    }
-
+    setLoading(true);
     try {
-      setSaving(true);
-
       if (Platform.OS === 'web' && window.OpenPay) {
-        // Crear token con OpenPay
         const tokenData = {
-          card_number: cardNumber.replace(/\s/g, ''),
-          holder_name: holderName.toUpperCase(),
-          expiration_year: expirationYear,
-          expiration_month: expirationMonth.padStart(2, '0'),
-          cvv2: cvv,
+          card_number: form.number.replace(/\s/g, ''),
+          holder_name: form.name,
+          expiration_year: form.year,
+          expiration_month: form.month,
+          cvv2: form.cvv,
         };
-
-        console.log('🔐 Generando token OpenPay...', tokenData);
 
         window.OpenPay.token.create(
           tokenData,
           async (response: any) => {
             try {
-              console.log('✅ Token generado:', response.data.id);
-
-              // Guardar tarjeta en el backend
               await paymentService.addPaymentMethod({
                 token_id: response.data.id,
-                device_session_id: deviceSessionId,
+                device_session_id: deviceSessionId
               });
-
-              Alert.alert('Éxito', 'Tarjeta agregada correctamente');
-              
-              // Limpiar formulario
-              setCardNumber('');
-              setHolderName('');
-              setExpirationMonth('');
-              setExpirationYear('');
-              setCvv('');
-              
+              setForm({ number: '', name: '', month: '', year: '', cvv: '' }); // Limpiar
               onSuccess();
-            } catch (err: any) {
-              console.error('❌ Error guardando tarjeta:', err);
-              setError(err.message);
+            } catch (apiErr: any) {
+              setError(apiErr.message || 'Error al guardar la tarjeta en el servidor.');
             } finally {
-              setSaving(false);
+              setLoading(false);
             }
           },
-          (error: any) => {
-            console.error('❌ Error generando token:', error);
-            setSaving(false);
-            
-            const errorMsg = error.data?.description || error.message || 'Error al procesar la tarjeta';
-            setError(errorMsg);
+          (err: any) => {
+            setLoading(false);
+            setError(err.data?.description || 'La tarjeta fue declinada o los datos son incorrectos.');
           }
         );
       } else {
-        // Fallback para móvil o si OpenPay no está disponible
-        throw new Error('OpenPay solo está disponible en web');
+        throw new Error("OpenPay no disponible");
       }
-    } catch (err: any) {
-      setSaving(false);
-      setError(err.message);
+    } catch (e: any) {
+      setLoading(false);
+      setError(e.message);
     }
   };
 
-  const formatCardNumber = (text: string) => {
-    const cleaned = text.replace(/\D/g, '');
-    const formatted = cleaned.match(/.{1,4}/g)?.join(' ') || cleaned;
-    return formatted.substring(0, 19); // 16 dígitos + 3 espacios
-  };
-
-  const formatExpirationMonth = (text: string) => {
-    const cleaned = text.replace(/\D/g, '');
-    if (cleaned.length === 0) return '';
-    let month = parseInt(cleaned);
-    if (month > 12) month = 12;
-    if (month < 1 && cleaned.length === 2) month = 1;
-    return String(month);
-  };
-
+  // Helpers de formato
+  const formatCard = (t: string) => setForm({ ...form, number: t.replace(/\D/g, '').replace(/(.{4})/g, '$1 ').trim().slice(0, 19) });
+  
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ flex: 1, justifyContent: 'flex-end' }}
-        >
-          <ScrollView
-            contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end' }}
-            keyboardShouldPersistTaps="handled"
-          >
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Agregar Tarjeta</Text>
-                <TouchableOpacity onPress={onClose} disabled={saving}>
-                  <Ionicons name="close" size={24} color="#1f2937" />
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView style={styles.modalBody}>
-                {/* Número de tarjeta */}
-                <View style={styles.modalInputGroup}>
-                  <Text style={styles.modalLabel}>Número de Tarjeta *</Text>
-                  <TextInput
-                    style={styles.modalInput}
-                    value={cardNumber}
-                    onChangeText={(text) => setCardNumber(formatCardNumber(text))}
-                    placeholder="1234 5678 9012 3456"
-                    keyboardType="numeric"
-                    maxLength={19}
-                    editable={!saving}
-                  />
-                </View>
-
-                {/* Nombre del titular */}
-                <View style={styles.modalInputGroup}>
-                  <Text style={styles.modalLabel}>Nombre del Titular *</Text>
-                  <TextInput
-                    style={styles.modalInput}
-                    value={holderName}
-                    onChangeText={setHolderName}
-                    placeholder="Como aparece en la tarjeta"
-                    autoCapitalize="characters"
-                    editable={!saving}
-                  />
-                </View>
-
-                {/* Fecha de expiración y CVV */}
-                <View style={styles.modalRow}>
-                  <View style={[styles.modalInputGroup, { flex: 1, marginRight: 8 }]}>
-                    <Text style={styles.modalLabel}>Mes *</Text>
-                    <TextInput
-                      style={styles.modalInput}
-                      value={expirationMonth}
-                      onChangeText={(text) => setExpirationMonth(formatExpirationMonth(text))}
-                      placeholder="12"
-                      keyboardType="numeric"
-                      maxLength={2}
-                      editable={!saving}
-                    />
-                  </View>
-
-                  <View style={[styles.modalInputGroup, { flex: 1, marginHorizontal: 4 }]}>
-                    <Text style={styles.modalLabel}>Año *</Text>
-                    <TextInput
-                      style={styles.modalInput}
-                      value={expirationYear}
-                      onChangeText={(text) => setExpirationYear(text.replace(/\D/g, ''))}
-                      placeholder="26"
-                      keyboardType="numeric"
-                      maxLength={2}
-                      editable={!saving}
-                    />
-                  </View>
-
-                  <View style={[styles.modalInputGroup, { flex: 1, marginLeft: 8 }]}>
-                    <Text style={styles.modalLabel}>CVV *</Text>
-                    <TextInput
-                      style={styles.modalInput}
-                      value={cvv}
-                      onChangeText={(text) => setCvv(text.replace(/\D/g, ''))}
-                      placeholder="123"
-                      keyboardType="numeric"
-                      maxLength={4}
-                      secureTextEntry
-                      editable={!saving}
-                    />
-                  </View>
-                </View>
-
-                {/* Info de seguridad */}
-                <View style={styles.modalInfoBox}>
-                  <Ionicons name="shield-checkmark-outline" size={24} color="#10b981" />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.modalInfoTitle}>Pagos Seguros</Text>
-                    <Text style={styles.modalInfoText}>
-                      Tus datos están protegidos con encriptación de nivel bancario
-                    </Text>
-                  </View>
-                </View>
-
-                {error ? (
-                  <View style={styles.errorBox}>
-                    <Ionicons name="alert-circle" size={20} color="#ef4444" />
-                    <Text style={styles.errorText}>{error}</Text>
-                  </View>
-                ) : null}
-              </ScrollView>
-
-              <View style={styles.modalFooter}>
-                <TouchableOpacity
-                  style={styles.modalCancelButton}
-                  onPress={onClose}
-                  disabled={saving}
-                >
-                  <Text style={styles.modalCancelText}>Cancelar</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.modalAddButton, saving && styles.buttonDisabled]}
-                  onPress={handleAddCard}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <>
-                      <Ionicons name="card-outline" size={20} color="#fff" />
-                      <Text style={styles.modalAddText}>Agregar Tarjeta</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalKeyView}>
+          <View style={styles.modalContent}>
+            
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Nueva Tarjeta</Text>
+              <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color="#374151" /></TouchableOpacity>
             </View>
-          </ScrollView>
+
+            <ScrollView contentContainerStyle={styles.modalBody}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Número de Tarjeta</Text>
+                <TextInput 
+                  style={styles.input} 
+                  placeholder="0000 0000 0000 0000" 
+                  keyboardType="numeric" 
+                  value={form.number} 
+                  onChangeText={formatCard}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Nombre del Titular</Text>
+                <TextInput 
+                  style={styles.input} 
+                  placeholder="Como aparece en el plástico" 
+                  value={form.name} 
+                  onChangeText={t => setForm({...form, name: t.toUpperCase()})}
+                />
+              </View>
+
+              <View style={styles.row}>
+                <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                  <Text style={styles.label}>Mes (MM)</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="01" 
+                    keyboardType="numeric" 
+                    maxLength={2}
+                    value={form.month}
+                    onChangeText={t => setForm({...form, month: t})}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1, marginHorizontal: 4 }]}>
+                  <Text style={styles.label}>Año (YY)</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="26" 
+                    keyboardType="numeric" 
+                    maxLength={2}
+                    value={form.year}
+                    onChangeText={t => setForm({...form, year: t})}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                  <Text style={styles.label}>CVV</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="123" 
+                    keyboardType="numeric" 
+                    maxLength={4}
+                    secureTextEntry
+                    value={form.cvv}
+                    onChangeText={t => setForm({...form, cvv: t})}
+                  />
+                </View>
+              </View>
+
+              {error ? <View style={styles.errorContainer}><Text style={styles.errorText}>{error}</Text></View> : null}
+              
+              <View style={styles.secureBadge}>
+                <Ionicons name="lock-closed" size={14} color="#059669" />
+                <Text style={styles.secureText}>Pagos procesados de forma segura por OpenPay</Text>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.btnCancel} onPress={onClose} disabled={loading}>
+                <Text style={styles.btnCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnSave} onPress={handleSubmit} disabled={loading}>
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnSaveText}>Guardar Tarjeta</Text>}
+              </TouchableOpacity>
+            </View>
+
+          </View>
         </KeyboardAvoidingView>
       </View>
     </Modal>
@@ -574,213 +415,82 @@ function AddCardModal({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9fafb' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'web' ? 20 : 60,
-    paddingBottom: 20,
-    backgroundColor: '#226bfc',
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  
+  // Header
+  header: { 
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingTop: Platform.OS === 'web' ? 20 : 60, paddingBottom: 20, paddingHorizontal: 20,
+    backgroundColor: '#226bfc' 
   },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  backButton: { padding: 4 },
+  headerAddBtn: { padding: 4 },
+
   content: { flex: 1 },
-  contentContainer: { padding: 20, paddingBottom: 100 },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  emptyTitle: { fontSize: 20, fontWeight: 'bold', color: '#1f2937', marginTop: 16 },
-  emptyText: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    marginTop: 8,
-    paddingHorizontal: 40,
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#226bfc',
-    borderRadius: 12,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    marginTop: 24,
-    gap: 8,
-  },
-  addButtonText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
-  cardsContainer: { gap: 16 },
-  cardItem: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  scrollContent: { padding: 20, paddingBottom: 100 },
+
+  // Tarjetas Visuales
+  cardsList: { gap: 20 },
+  cardWrapper: { marginBottom: 10 },
+  visualCard: {
+    height: 200, borderRadius: 16, padding: 24,
     justifyContent: 'space-between',
-    marginBottom: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 5,
   },
-  cardBrand: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  cardIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardBrandText: { fontSize: 16, fontWeight: '600', color: '#1f2937' },
-  cardNumber: { fontSize: 14, color: '#6b7280', marginTop: 2 },
-  defaultBadge: {
-    backgroundColor: '#dcfce7',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-  },
-  defaultText: { fontSize: 12, fontWeight: '600', color: '#166534' },
-  cardDetails: { gap: 8, marginBottom: 16 },
-  cardDetail: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cardDetailText: { fontSize: 14, color: '#6b7280' },
-  cardActions: { flexDirection: 'row', gap: 12 },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#eff6ff',
-    borderRadius: 12,
-    paddingVertical: 12,
-    gap: 6,
-  },
-  actionButtonText: { fontSize: 14, fontWeight: '600', color: '#226bfc' },
-  actionButtonDanger: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fef2f2',
-    borderRadius: 12,
-    paddingVertical: 12,
-    gap: 6,
-  },
-  actionButtonDangerText: { fontSize: 14, fontWeight: '600', color: '#ef4444' },
-  infoBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#eff6ff',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 24,
-    gap: 12,
-  },
-  infoText: { flex: 1, fontSize: 14, color: '#1e40af', lineHeight: 20 },
-  errorBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fee2e2',
-    borderLeftWidth: 4,
-    borderLeftColor: '#ef4444',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    gap: 8,
-  },
-  errorText: { flex: 1, fontSize: 14, color: '#991b1b' },
+  visualCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  cardChip: { width: 40, height: 30, backgroundColor: '#e5e7eb', borderRadius: 6, opacity: 0.8 },
+  defaultBadge: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
+  defaultText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+  visualCardNumber: { marginVertical: 20 },
+  cardNumberText: { color: '#fff', fontSize: 22, letterSpacing: 2, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  visualCardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+  cardLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 10, marginBottom: 2 },
+  cardValue: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  brandText: { color: '#fff', fontSize: 18, fontWeight: 'bold', fontStyle: 'italic' },
+
+  cardActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12, gap: 12, alignItems: 'center' },
+  actionBtn: { paddingVertical: 6, paddingHorizontal: 12 },
+  actionTextPrimary: { color: '#226bfc', fontSize: 14, fontWeight: '600' },
+  deleteBtn: { padding: 8, backgroundColor: '#fee2e2', borderRadius: 8 },
+
+  // Empty State
+  emptyContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 60 },
+  emptyIconBg: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: 'bold', color: '#1f2937' },
+  emptyText: { fontSize: 14, color: '#6b7280', textAlign: 'center', marginHorizontal: 40, marginTop: 8, marginBottom: 24 },
+  emptyBtn: { backgroundColor: '#226bfc', paddingHorizontal: 24, paddingVertical: 14, borderRadius: 12 },
+  emptyBtnText: { color: '#fff', fontWeight: 'bold' },
+
+  // FAB
   fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#226bfc',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    position: 'absolute', right: 24, bottom: 30,
+    width: 56, height: 56, borderRadius: 28, backgroundColor: '#226bfc',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#226bfc', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 6
   },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#1f2937' },
-  modalBody: { padding: 20 },
-  modalText: { fontSize: 14, color: '#6b7280', lineHeight: 20, marginBottom: 20 },
-  modalInputGroup: { marginBottom: 16 },
-  modalLabel: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#1f2937',
-    backgroundColor: '#fff',
-  },
-  modalRow: { flexDirection: 'row', marginHorizontal: -4 },
-  modalInfoBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#f0fdf4',
-    borderRadius: 12,
-    padding: 16,
-    gap: 12,
-  },
-  modalInfoTitle: { fontSize: 14, fontWeight: '600', color: '#166534', marginBottom: 4 },
-  modalInfoText: { fontSize: 13, color: '#166534', lineHeight: 18 },
-  modalFooter: {
-    flexDirection: 'row',
-    padding: 20,
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-  },
-  modalCancelButton: {
-    flex: 1,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalCancelText: { fontSize: 16, fontWeight: '600', color: '#374151' },
-  modalAddButton: {
-    flex: 1,
-    flexDirection: 'row',
-    backgroundColor: '#226bfc',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  modalAddText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
-  buttonDisabled: { opacity: 0.5 },
+
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalKeyView: { flex: 1, justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderColor: '#f3f4f6' },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#111827' },
+  modalBody: { padding: 24 },
+  inputGroup: { marginBottom: 16 },
+  row: { flexDirection: 'row' },
+  label: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 },
+  input: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, padding: 12, fontSize: 16, color: '#1f2937', backgroundColor: '#fff' },
+  
+  errorContainer: { backgroundColor: '#fef2f2', padding: 12, borderRadius: 8, marginBottom: 16, borderWidth: 1, borderColor: '#fecaca' },
+  errorText: { color: '#991b1b', fontSize: 13 },
+  secureBadge: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10, padding: 10, backgroundColor: '#ecfdf5', borderRadius: 8 },
+  secureText: { color: '#065f46', fontSize: 12 },
+
+  modalFooter: { flexDirection: 'row', padding: 20, borderTopWidth: 1, borderColor: '#f3f4f6', gap: 12 },
+  btnCancel: { flex: 1, padding: 14, backgroundColor: '#f3f4f6', borderRadius: 10, alignItems: 'center' },
+  btnCancelText: { color: '#4b5563', fontWeight: '600' },
+  btnSave: { flex: 1, padding: 14, backgroundColor: '#226bfc', borderRadius: 10, alignItems: 'center' },
+  btnSaveText: { color: '#fff', fontWeight: 'bold' },
 });

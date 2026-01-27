@@ -1,49 +1,66 @@
-// src/screens/invoices/RequestInvoiceScreen.tsx
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  Platform,
-  Alert,
   ActivityIndicator,
   RefreshControl,
+  useWindowDimensions,
+  Modal
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import MainLayout from '../../layouts/MainLayout';
 import invoiceService, { Payment } from '../../api/invoiceService';
+import billingInfoService from '../../api/billingInfoService'; 
 
 export default function RequestInvoiceScreen() {
   const navigation = useNavigation();
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= 1024;
   
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [requesting, setRequesting] = useState(false);
-  const [selectedPayment, setSelectedPayment] = useState<number | null>(null);
+  const [selectedPaymentId, setSelectedPaymentId] = useState<number | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [error, setError] = useState('');
+  const [rfcDestino, setRfcDestino] = useState<string>('');
+  
+  // Estado para el Modal de Feedback (Éxito o Error)
+  const [feedbackModal, setFeedbackModal] = useState<{
+    visible: boolean;
+    type: 'success' | 'error';
+    title: string;
+    message: string;
+    data?: any; // Para guardar datos extra como el folio si es éxito
+  }>({
+    visible: false,
+    type: 'success',
+    title: '',
+    message: ''
+  });
 
   useEffect(() => {
-    loadPayments();
+    loadData();
   }, []);
 
-  const loadPayments = async () => {
+  const loadData = async () => {
     try {
-      setError('');
-      const data = await invoiceService.getPaymentsWithoutInvoice();
-      setPayments(data || []); // Asegurar que siempre sea un array
-    } catch (err: any) {
-      console.error('Error cargando pagos:', err);
-      setError(err.message);
-      setPayments([]); // Inicializar como array vacío en caso de error
+      if (!refreshing) setLoading(true);
       
-      // Solo mostrar alert si no es un error de "no hay pagos"
-      if (!err.message.includes('disponibles')) {
-        Alert.alert('Error', err.message);
+      const [paymentsData, billingData] = await Promise.all([
+        invoiceService.getPaymentsWithoutInvoice(),
+        billingInfoService.getBillingInfo().catch(() => null)
+      ]);
+
+      setPayments(paymentsData || []);
+      if (billingData) {
+        setRfcDestino(billingData.rfc);
       }
+    } catch (err: any) {
+      console.error(err);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -52,488 +69,351 @@ export default function RequestInvoiceScreen() {
 
   const handleRefresh = () => {
     setRefreshing(true);
-    loadPayments();
+    loadData();
   };
 
-  const confirmRequestInvoice = () => {
-    console.log('🔔 Mostrando confirmación para pago ID:', selectedPayment);
-    
-    if (!selectedPayment) {
-      Alert.alert('Atención', 'Selecciona una transacción para facturar');
-      return;
-    }
-
-    if (Platform.OS === 'web') {
-      // En web, usar confirm nativo
-      const confirmed = window.confirm(
-        '¿Deseas solicitar la factura para esta transacción? Se generará con los datos fiscales registrados en tu perfil.'
-      );
-      
-      if (confirmed) {
-        handleRequestInvoice();
-      }
-    } else {
-      // En mobile, usar Alert normal
-      Alert.alert(
-        'Confirmar Solicitud',
-        '¿Deseas solicitar la factura para esta transacción? Se generará con los datos fiscales registrados en tu perfil.',
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          {
-            text: 'Solicitar',
-            onPress: () => handleRequestInvoice(),
-          },
-        ]
-      );
-    }
-  };
+  const selectedPayment = useMemo(() => 
+    payments.find(p => p.id === selectedPaymentId), 
+  [payments, selectedPaymentId]);
 
   const handleRequestInvoice = async () => {
-    console.log('🚀 Iniciando solicitud de factura...');
-    
+    if (!selectedPaymentId) return;
+
     try {
       setRequesting(true);
       
-      console.log('📤 Enviando petición a backend...');
       const invoice = await invoiceService.requestInvoice({
-        payment_id: selectedPayment!,
+        payment_id: selectedPaymentId,
       });
 
-      console.log('✅ Factura generada:', invoice);
-
-      // Recargar lista de pagos primero
-      await loadPayments();
-      setSelectedPayment(null);
-
-      // Luego mostrar mensaje de éxito
-      if (Platform.OS === 'web') {
-        window.alert(
-          `✅ Factura generada exitosamente\n\nFolio: ${invoice.folio || 'N/A'}\nTotal: ${formatCurrency(invoice.total)}\n\nLa factura ha sido enviada a tu correo registrado.`
-        );
-      } else {
-        Alert.alert(
-          '✅ Factura Solicitada',
-          `Tu factura ha sido generada exitosamente.\n\nFolio: ${invoice.folio || 'N/A'}\nTotal: ${formatCurrency(invoice.total)}\n\nLa factura ha sido enviada a tu correo registrado.`,
-          [
-            {
-              text: 'Ver Facturas',
-              onPress: () => navigation.navigate('InvoiceHistory' as never),
-            },
-            { text: 'Aceptar' },
-          ]
-        );
-      }
-    } catch (err: any) {
-      console.error('❌ Error solicitando factura:', err);
-      console.error('Error completo:', JSON.stringify(err, null, 2));
+      // ✅ ÉXITO: Mostramos modal verde
+      setFeedbackModal({
+        visible: true,
+        type: 'success',
+        title: '¡Factura Generada!',
+        message: 'Se ha enviado el XML y PDF a tu correo electrónico registrado.',
+        data: invoice
+      });
       
-      if (Platform.OS === 'web') {
-        window.alert(`Error: ${err.message}`);
-      } else {
-        Alert.alert('Error', err.message);
-      }
+      loadData();
+      setSelectedPaymentId(null);
+
+    } catch (err: any) {
+      // ❌ ERROR: Mostramos modal rojo con el mensaje del backend
+      setFeedbackModal({
+        visible: true,
+        type: 'error',
+        title: 'No se pudo facturar',
+        message: err.message || 'Ocurrió un error inesperado al procesar la solicitud.',
+      });
     } finally {
       setRequesting(false);
     }
   };
 
-  const formatCurrency = (amount: string | number): string => {
-    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-    return new Intl.NumberFormat('es-MX', {
-      style: 'currency',
-      currency: 'MXN',
-    }).format(numAmount);
-  };
-
-  const formatDate = (dateString?: string): string => {
-    if (!dateString) return 'Sin fecha';
-    return new Date(dateString).toLocaleDateString('es-MX', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-  };
-
-  const getPaymentIcon = (payment: Payment): string => {
-    switch (payment.type) {
-      case 'activation':
-        return 'radio-outline';
-      case 'renewal':
-      case 'subscription':
-        return 'sync-outline';
-      default:
-        return 'card-outline';
+  const closeFeedbackModal = () => {
+    const wasSuccess = feedbackModal.type === 'success';
+    setFeedbackModal({ ...feedbackModal, visible: false });
+    
+    // Si fue éxito, al cerrar mandamos al historial
+    if (wasSuccess) {
+      navigation.navigate('InvoiceHistory' as never);
     }
   };
 
-  if (loading) {
+  const formatCurrency = (amount: string | number) => {
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(num);
+  };
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return '';
+    return new Date(dateString).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+  };
+
+  // --- COMPONENTE RENDERIZADO DEL MODAL ---
+  const FeedbackModal = () => {
+    const isSuccess = feedbackModal.type === 'success';
+    const color = isSuccess ? '#10b981' : '#ef4444'; // Verde o Rojo
+    const icon = isSuccess ? 'checkmark' : 'alert';
+    const bgIcon = isSuccess ? '#d1fae5' : '#fee2e2';
+
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Solicitar Factura</Text>
-          <View style={{ width: 24 }} />
+      <Modal
+        visible={feedbackModal.visible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeFeedbackModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            
+            {/* Icono Dinámico */}
+            <View style={[styles.modalIconContainer, { backgroundColor: color, borderColor: bgIcon }]}>
+              <Ionicons name={icon} size={40} color="#fff" />
+            </View>
+
+            <Text style={styles.modalTitle}>{feedbackModal.title}</Text>
+            
+            <Text style={styles.modalText}>
+              {feedbackModal.message}
+            </Text>
+            
+            {/* Si es éxito y tenemos datos de factura, mostramos resumen */}
+            {isSuccess && feedbackModal.data && (
+               <View style={styles.invoiceSummary}>
+                 <Text style={styles.summaryLabel}>Folio Fiscal:</Text>
+                 <Text style={styles.summaryValue}>{feedbackModal.data.folio || 'N/A'}</Text>
+                 <View style={styles.rowBetween}>
+                    <Text style={styles.summaryLabel}>Total:</Text>
+                    <Text style={[styles.summaryValue, {color: '#166534'}]}>
+                        {formatCurrency(feedbackModal.data.total)}
+                    </Text>
+                 </View>
+               </View>
+            )}
+
+            {/* Si es error, mostramos un tip */}
+            {!isSuccess && (
+                <View style={styles.errorTip}>
+                    <Ionicons name="information-circle" size={16} color="#b45309" />
+                    <Text style={styles.errorTipText}>
+                        Si el problema persiste, contacta a soporte técnico.
+                    </Text>
+                </View>
+            )}
+
+            <View style={styles.modalActions}>
+              {!isSuccess && (
+                  <TouchableOpacity 
+                    style={styles.modalBtnOutline} 
+                    onPress={() => setFeedbackModal({...feedbackModal, visible: false})}
+                  >
+                    <Text style={styles.modalBtnOutlineText}>Cerrar</Text>
+                  </TouchableOpacity>
+              )}
+              
+              <TouchableOpacity 
+                style={[styles.modalBtnPrimary, { backgroundColor: isSuccess ? '#226bfc' : '#ef4444' }]} 
+                onPress={closeFeedbackModal}
+              >
+                <Text style={styles.modalBtnPrimaryText}>
+                    {isSuccess ? 'Aceptar y Ver Historial' : 'Entendido'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#226bfc" />
-          <Text style={styles.loadingText}>Cargando pagos...</Text>
-        </View>
-      </View>
+      </Modal>
     );
-  }
+  };
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Solicitar Factura</Text>
-        <View style={{ width: 24 }} />
-      </View>
-
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.contentContainer}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
-      >
-        {/* Info Box */}
-        <View style={styles.infoBox}>
-          <Ionicons name="information-circle-outline" size={24} color="#3b82f6" />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.infoTitle}>Facturación Electrónica</Text>
-            <Text style={styles.infoText}>
-              Selecciona una transacción para solicitar tu factura. La factura será generada y
-              enviada a tu correo registrado en datos fiscales.
-            </Text>
+    <MainLayout activeMenu="Config-Facturacion">
+      <View style={styles.container}>
+        
+        {/* HEADER */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.pageTitle}>Solicitar Factura</Text>
+            <Text style={styles.pageSubtitle}>Selecciona un movimiento para facturar</Text>
+          </View>
+          <View style={styles.rfcBadge}>
+            <Text style={styles.rfcLabel}>Facturando a:</Text>
+            <Text style={styles.rfcValue}>{rfcDestino || 'Sin Datos Fiscales'}</Text>
           </View>
         </View>
 
-        {error ? (
-          <View style={styles.errorBox}>
-            <Ionicons name="alert-circle" size={20} color="#ef4444" />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null}
-
-        {/* Lista de Pagos */}
-        {!payments || payments.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="document-text-outline" size={64} color="#d1d5db" />
-            <Text style={styles.emptyTitle}>No hay pagos disponibles</Text>
-            <Text style={styles.emptyText}>
-              Todos tus pagos ya tienen factura o no hay transacciones recientes para facturar.
-            </Text>
-            <TouchableOpacity
-              style={styles.emptyButton}
-              onPress={() => navigation.navigate('InvoiceHistory' as never)}
-            >
-              <Text style={styles.emptyButtonText}>Ver Historial de Facturas</Text>
-            </TouchableOpacity>
-          </View>
+        {loading && !refreshing ? (
+          <ActivityIndicator size="large" color="#226bfc" style={{marginTop: 50}} />
         ) : (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Pagos Disponibles para Facturar</Text>
-              <Text style={styles.sectionSubtitle}>
-                {payments?.length || 0} {(payments?.length || 0) === 1 ? 'pago' : 'pagos'}
-              </Text>
+          <View style={[styles.contentContainer, isDesktop && styles.desktopLayout]}>
+            
+            {/* COLUMNA IZQUIERDA: LISTA */}
+            <View style={[styles.leftColumn, isDesktop && { width: '60%' }]}>
+              <ScrollView 
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+                contentContainerStyle={{ paddingBottom: 100 }}
+              >
+                {payments.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Ionicons name="documents-outline" size={64} color="#d1d5db" />
+                    <Text style={styles.emptyTitle}>No hay pagos pendientes</Text>
+                    <Text style={styles.emptyText}>Todas tus transacciones recientes ya han sido facturadas.</Text>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={styles.sectionTitle}>Pagos Disponibles ({payments.length})</Text>
+                    {payments.map((payment) => {
+                      const isSelected = selectedPaymentId === payment.id;
+                      return (
+                        <TouchableOpacity
+                          key={payment.id}
+                          style={[styles.paymentCard, isSelected && styles.paymentCardSelected]}
+                          onPress={() => setSelectedPaymentId(payment.id)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.cardLeft}>
+                            <View style={[styles.iconBox, isSelected ? styles.iconBoxSelected : styles.iconBoxNormal]}>
+                              <Ionicons 
+                                name={isSelected ? "checkmark" : "receipt-outline"} 
+                                size={24} 
+                                color={isSelected ? "#fff" : "#6b7280"} 
+                              />
+                            </View>
+                            <View>
+                              <Text style={[styles.paymentDesc, isSelected && {color: '#226bfc'}]}>
+                                {payment.description}
+                              </Text>
+                              <Text style={styles.paymentDate}>
+                                {formatDate(payment.paid_at || payment.created_at)}
+                              </Text>
+                              {payment.device && (
+                                <Text style={styles.deviceInfo}>GPS: {payment.device.imei}</Text>
+                              )}
+                            </View>
+                          </View>
+                          <View style={styles.cardRight}>
+                            <Text style={styles.amountText}>{formatCurrency(payment.total)}</Text>
+                            <View style={styles.statusPill}>
+                              <Text style={styles.statusPillText}>Pagado</Text>
+                            </View>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </>
+                )}
+              </ScrollView>
             </View>
 
-            {payments?.map((payment) => (
-              <TouchableOpacity
-                key={payment.id}
-                style={[
-                  styles.paymentCard,
-                  selectedPayment === payment.id && styles.paymentCardSelected,
-                ]}
-                onPress={() => setSelectedPayment(payment.id)}
-                disabled={requesting}
-              >
-                <View style={styles.paymentHeader}>
-                  <View style={styles.paymentHeaderLeft}>
-                    <View
-                      style={[
-                        styles.radioButton,
-                        selectedPayment === payment.id && styles.radioButtonSelected,
-                      ]}
-                    >
-                      {selectedPayment === payment.id && (
-                        <View style={styles.radioButtonInner} />
-                      )}
-                    </View>
+            {/* COLUMNA DERECHA: RESUMEN */}
+            <View style={[styles.rightColumn, isDesktop ? { width: '38%' } : styles.mobileFooter]}>
+               <View style={styles.summaryCard}>
+                  <Text style={styles.summaryTitle}>Resumen de Solicitud</Text>
+                  
+                  {selectedPayment ? (
+                    <>
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>Concepto:</Text>
+                        <Text style={styles.summaryRowValue} numberOfLines={1}>{selectedPayment.description}</Text>
+                      </View>
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>Fecha Pago:</Text>
+                        <Text style={styles.summaryRowValue}>{formatDate(selectedPayment.paid_at || selectedPayment.created_at)}</Text>
+                      </View>
+                      <View style={styles.divider} />
+                      <View style={styles.totalRow}>
+                        <Text style={styles.totalLabel}>Total a Facturar</Text>
+                        <Text style={styles.totalValue}>{formatCurrency(selectedPayment.total)}</Text>
+                      </View>
 
-                    <View style={styles.paymentIcon}>
-                      <Ionicons name={getPaymentIcon(payment)} size={20} color="#226bfc" />
-                    </View>
-
-                    <View style={styles.paymentInfo}>
-                      <Text style={styles.paymentDescription}>{payment.description}</Text>
-                      <Text style={styles.paymentDate}>{formatDate(payment.paid_at || payment.created_at)}</Text>
-                      {payment.device?.imei && (
-                        <View style={styles.deviceBadge}>
-                          <Ionicons name="radio-outline" size={12} color="#6b7280" />
-                          <Text style={styles.deviceText}>IMEI: {payment.device.imei}</Text>
+                      {!rfcDestino && (
+                        <View style={styles.warningBox}>
+                          <Ionicons name="warning" size={16} color="#b45309" />
+                          <Text style={styles.warningText}>No tienes RFC registrado. Configura tus datos fiscales antes de continuar.</Text>
                         </View>
                       )}
-                    </View>
-                  </View>
 
-                  <View style={styles.paymentRight}>
-                    <Text style={styles.paymentAmount}>{formatCurrency(payment.total)}</Text>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        payment.is_paid && styles.statusBadgeSuccess,
-                      ]}
-                    >
-                      <Text style={styles.statusText}>
-                        {payment.is_paid ? 'Pagado' : payment.status}
+                      <TouchableOpacity 
+                        style={[styles.requestBtn, (!rfcDestino || requesting) && styles.btnDisabled]}
+                        onPress={handleRequestInvoice}
+                        disabled={!rfcDestino || requesting}
+                      >
+                        {requesting ? (
+                          <ActivityIndicator color="#fff" />
+                        ) : (
+                          <>
+                            <Ionicons name="paper-plane-outline" size={20} color="#fff" />
+                            <Text style={styles.requestBtnText}>Solicitar Factura</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                      <Text style={styles.legalText}>
+                        Al solicitar, confirmas que los datos fiscales son correctos.
                       </Text>
+                    </>
+                  ) : (
+                    <View style={styles.emptySummary}>
+                      <Ionicons name="arrow-back-circle-outline" size={40} color="#d1d5db" />
+                      <Text style={styles.emptySummaryText}>Selecciona un pago de la lista para ver el detalle.</Text>
                     </View>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            ))}
-
-            {/* Botón solicitar */}
-            <TouchableOpacity
-              style={[
-                styles.requestButton,
-                (!selectedPayment || requesting) && styles.requestButtonDisabled,
-              ]}
-              onPress={confirmRequestInvoice}
-              disabled={!selectedPayment || requesting}
-            >
-              {requesting ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="document-text-outline" size={20} color="#fff" />
-                  <Text style={styles.requestButtonText}>Solicitar Factura</Text>
-                </>
-              )}
-            </TouchableOpacity>
-
-            {/* Información adicional */}
-            <View style={styles.additionalInfo}>
-              <Text style={styles.additionalInfoTitle}>Requisitos:</Text>
-              <View style={styles.requirementRow}>
-                <Ionicons name="checkmark-circle" size={16} color="#10b981" />
-                <Text style={styles.requirementText}>
-                  Debes tener tus datos fiscales completos
-                </Text>
-              </View>
-              <View style={styles.requirementRow}>
-                <Ionicons name="checkmark-circle" size={16} color="#10b981" />
-                <Text style={styles.requirementText}>
-                  Solo se pueden facturar transacciones del mes en curso y anterior
-                </Text>
-              </View>
-              <View style={styles.requirementRow}>
-                <Ionicons name="checkmark-circle" size={16} color="#10b981" />
-                <Text style={styles.requirementText}>
-                  La factura se enviará al correo registrado
-                </Text>
-              </View>
+                  )}
+               </View>
             </View>
-          </>
+
+          </View>
         )}
-      </ScrollView>
-    </View>
+      </View>
+      
+      {/* ✅ INYECCIÓN DEL MODAL */}
+      <FeedbackModal />
+    </MainLayout>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9fafb' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'web' ? 20 : 60,
-    paddingBottom: 20,
-    backgroundColor: '#226bfc',
-  },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 12,
-  },
-  loadingText: { fontSize: 14, color: '#6b7280' },
-  content: { flex: 1 },
-  contentContainer: { padding: 20 },
-  infoBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#eff6ff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    gap: 12,
-  },
-  infoTitle: { fontSize: 14, fontWeight: '600', color: '#1e40af', marginBottom: 4 },
-  infoText: { fontSize: 13, color: '#1e40af', lineHeight: 18 },
-  errorBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fee2e2',
-    borderLeftWidth: 4,
-    borderLeftColor: '#ef4444',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    gap: 8,
-  },
-  errorText: { flex: 1, fontSize: 14, color: '#991b1b' },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 20,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  emptyButton: {
-    backgroundColor: '#226bfc',
-    borderRadius: 12,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-  },
-  emptyButtonText: { fontSize: 14, fontWeight: '600', color: '#fff' },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#1f2937' },
-  sectionSubtitle: { fontSize: 14, color: '#6b7280' },
-  paymentCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 2,
-    borderColor: '#e5e7eb',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  paymentCardSelected: {
-    borderColor: '#226bfc',
-    backgroundColor: '#eff6ff',
-  },
-  paymentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  paymentHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 12,
-  },
-  radioButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#d1d5db',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  radioButtonSelected: { borderColor: '#226bfc' },
-  radioButtonInner: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#226bfc',
-  },
-  paymentIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#eff6ff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  paymentInfo: { flex: 1 },
-  paymentDescription: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 4,
-  },
-  paymentDate: { fontSize: 12, color: '#6b7280', marginBottom: 4 },
-  deviceBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
-  },
-  deviceText: { fontSize: 11, color: '#6b7280' },
-  paymentRight: { alignItems: 'flex-end', gap: 4 },
-  paymentAmount: { fontSize: 16, fontWeight: 'bold', color: '#1f2937' },
-  statusBadge: {
-    backgroundColor: '#f3f4f6',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  statusBadgeSuccess: { backgroundColor: '#dcfce7' },
-  statusText: { fontSize: 11, fontWeight: '600', color: '#166534' },
-  requestButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#226bfc',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 24,
-    gap: 8,
-  },
-  requestButtonDisabled: { opacity: 0.5 },
-  requestButtonText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
-  additionalInfo: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 24,
-  },
-  additionalInfoTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 12,
-  },
-  requirementRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    marginBottom: 8,
-  },
-  requirementText: { flex: 1, fontSize: 13, color: '#6b7280', lineHeight: 18 },
+  header: { padding: 20, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e5e7eb', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  pageTitle: { fontSize: 24, fontWeight: 'bold', color: '#1f2937' },
+  pageSubtitle: { fontSize: 14, color: '#6b7280', marginTop: 2 },
+  rfcBadge: { alignItems: 'flex-end' },
+  rfcLabel: { fontSize: 11, color: '#9ca3af', textTransform: 'uppercase' },
+  rfcValue: { fontSize: 14, fontWeight: 'bold', color: '#374151', backgroundColor: '#f3f4f6', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, marginTop: 2 },
+  contentContainer: { flex: 1, flexDirection: 'column' },
+  desktopLayout: { flexDirection: 'row', padding: 20, gap: 20 },
+  leftColumn: { flex: 1 },
+  rightColumn: {},
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#6b7280', marginBottom: 12, paddingHorizontal: 20, marginTop: 20 },
+  emptyState: { alignItems: 'center', marginTop: 60, padding: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: 'bold', color: '#374151', marginTop: 12 },
+  emptyText: { fontSize: 14, color: '#9ca3af', textAlign: 'center', marginTop: 4 },
+  paymentCard: { backgroundColor: '#fff', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, marginHorizontal: 20, marginBottom: 12, borderRadius: 12, borderWidth: 1, borderColor: '#e5e7eb', shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 2, elevation: 1 },
+  paymentCardSelected: { borderColor: '#226bfc', backgroundColor: '#eff6ff', borderWidth: 2 },
+  cardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  iconBox: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  iconBoxNormal: { backgroundColor: '#f3f4f6' },
+  iconBoxSelected: { backgroundColor: '#226bfc' },
+  paymentDesc: { fontSize: 15, fontWeight: '600', color: '#374151' },
+  paymentDate: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  deviceInfo: { fontSize: 11, color: '#9ca3af', marginTop: 2 },
+  cardRight: { alignItems: 'flex-end' },
+  amountText: { fontSize: 16, fontWeight: 'bold', color: '#111827' },
+  statusPill: { backgroundColor: '#dcfce7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginTop: 4 },
+  statusPillText: { fontSize: 10, fontWeight: 'bold', color: '#166534' },
+  mobileFooter: { padding: 16, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e5e7eb', elevation: 10 },
+  summaryCard: { backgroundColor: '#fff', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#e5e7eb', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  summaryTitle: { fontSize: 16, fontWeight: 'bold', color: '#1f2937', marginBottom: 16 },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  summaryLabel: { fontSize: 13, color: '#6b7280' },
+  summaryRowValue: { fontSize: 13, fontWeight: '500', color: '#374151', flex: 1, textAlign: 'right', paddingLeft: 10 },
+  divider: { height: 1, backgroundColor: '#f3f4f6', marginVertical: 12 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  totalLabel: { fontSize: 16, fontWeight: 'bold', color: '#374151' },
+  totalValue: { fontSize: 24, fontWeight: 'bold', color: '#226bfc' },
+  warningBox: { flexDirection: 'row', backgroundColor: '#fffbeb', padding: 10, borderRadius: 8, marginBottom: 12, gap: 8 },
+  warningText: { fontSize: 12, color: '#b45309', flex: 1 },
+  requestBtn: { backgroundColor: '#226bfc', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12, gap: 8, shadowColor: '#226bfc', shadowOpacity: 0.3, shadowRadius: 8 },
+  btnDisabled: { backgroundColor: '#9ca3af', shadowOpacity: 0 },
+  requestBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  legalText: { fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: 12 },
+  emptySummary: { alignItems: 'center', padding: 20, opacity: 0.7 },
+  emptySummaryText: { textAlign: 'center', color: '#6b7280', marginTop: 10 },
+
+  // --- MODAL STYLES ---
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalContent: { backgroundColor: '#fff', borderRadius: 24, padding: 24, width: '100%', maxWidth: 360, alignItems: 'center', elevation: 5 },
+  modalIconContainer: { width: 70, height: 70, borderRadius: 35, alignItems: 'center', justifyContent: 'center', marginBottom: 16, borderWidth: 4 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1f2937', marginBottom: 8, textAlign: 'center' },
+  modalText: { fontSize: 14, color: '#6b7280', textAlign: 'center', marginBottom: 20, lineHeight: 22 },
+  invoiceSummary: { width: '100%', backgroundColor: '#f9fafb', padding: 12, borderRadius: 8, marginBottom: 24 },
+  summaryValue: { fontSize: 14, fontWeight: '600', color: '#1f2937', marginBottom: 4 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
+  errorTip: { flexDirection: 'row', backgroundColor: '#fff7ed', padding: 10, borderRadius: 8, marginBottom: 20, gap: 8 },
+  errorTipText: { fontSize: 12, color: '#c2410c', flex: 1 },
+  modalActions: { flexDirection: 'row', gap: 12, width: '100%' },
+  modalBtnOutline: { flex: 1, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#d1d5db', alignItems: 'center' },
+  modalBtnOutlineText: { color: '#374151', fontWeight: '600' },
+  modalBtnPrimary: { flex: 1, padding: 12, borderRadius: 10, alignItems: 'center' },
+  modalBtnPrimaryText: { color: '#fff', fontWeight: '600' },
 });

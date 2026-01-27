@@ -276,6 +276,34 @@ class CompanyService {
   }
 
   /**
+   * Actualizar un usuario del equipo
+   * PUT company-users/update/{id}
+   */
+  async updateMember(id: number, data: { name?: string; phone?: string; position?: string; role_id?: number }): Promise<any> {
+    try {
+      // Ajusta los nombres de campos según lo que espere tu backend (snake_case o camelCase)
+      const response = await apiClient.put(`/company-users/update/${id}`, data);
+      return response;
+    } catch (error: any) {
+      console.error('Error updating member:', error);
+      throw new Error(error.response?.data?.message || 'Error al actualizar usuario');
+    }
+  }
+
+  /**
+   * Suspender/Activar usuario
+   * PATCH company-users/{id}/suspend
+   */
+  async suspendMember(id: number): Promise<any> {
+    try {
+      const response = await apiClient.patch(`/company-users/${id}/suspend`);
+      return response;
+    } catch (error: any) {
+      console.error('Error suspending member:', error);
+      throw new Error(error.response?.data?.message || 'Error al cambiar estado del usuario');
+    }
+  }
+  /**
    * Validar RFC (México)
    */
   validateRFC(rfc: string): boolean {

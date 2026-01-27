@@ -1,5 +1,5 @@
-// src/api/fineService.ts
 import axios from 'axios';
+import apiClient from './client';
 
 export interface Fine {
   folio: string;
@@ -21,18 +21,20 @@ export interface FineSearchResponse {
   message?: string;
 }
 
+// URL de tu Scraper (Robot)
 const MULTAS_API_BASE = 'http://localhost:3002';
 
 class FineService {
   /**
-   * Buscar multas por placa
+   * Buscar multas por placa y Sincronizar con Backend
    */
   async searchByPlate(plate: string): Promise<Fine[]> {
     try {
-      console.log('🚨 Buscando multas para placa:', plate);
+      console.log('🚨 Buscando multas en Robot para:', plate);
 
       const cleanPlate = plate.replace(/[-\s]/g, '').toUpperCase();
 
+      // 1. CONSULTA AL ROBOT (Scraping)
       const response = await axios.post<FineSearchResponse>(
         `${MULTAS_API_BASE}/api/multas`,
         {
@@ -41,9 +43,32 @@ class FineService {
         }
       );
 
-      console.log('📋 Respuesta API multas:', response.data);
+      console.log('📋 Respuesta Robot:', response.data);
 
+      
       if (response.data.success && response.data.multas) {
+        
+        // ============================================================
+        // 2. 🔌 SINCRONIZACIÓN: ENVIAR A LARAVEL PARA GUARDAR
+        // ============================================================
+        try {
+            console.log("💾 Guardando en Base de Datos...");
+            
+            // Usamos el endpoint que creamos en el paso anterior
+            await apiClient.post('/billing/webhooks/scraping/fines', {
+                plate: cleanPlate,
+                state: 'Jalisco',
+                fines: response.data.multas // Enviamos el array tal cual
+            });
+            
+            console.log("✅ ¡Sincronización exitosa con Laravel!");
+            
+        } catch (syncError) {
+            // No detenemos la app si falla el guardado, solo avisamos
+            console.error("⚠️ Error guardando en BD (pero mostramos resultados):", syncError);
+        }
+        // ============================================================
+
         return response.data.multas;
       }
 
@@ -59,25 +84,11 @@ class FineService {
     }
   }
 
-  /**
-   * NO EXISTE EN TU API — la dejo solo por si luego la implementas
-   */
-  async getFineDetails(folio: string): Promise<Fine | null> {
-    console.warn("⚠️ Endpoint /infracciones/detalle/:folio NO existe en tu API Node.");
-    return null;
-  }
-
-  /**
-   * Calcular estadísticas de multas
-   */
+  // ... (El resto de tus métodos formatMonto, calculateFineStats, etc. se quedan igual) ...
+  
   calculateFineStats(fines: Fine[]) {
-    const pendientes = fines.filter(f =>
-      f.estatus.toLowerCase().includes('pendiente')
-    );
-
-    const pagadas = fines.filter(f =>
-      f.estatus.toLowerCase().includes('pagad')
-    );
+    const pendientes = fines.filter(f => f.estatus.toLowerCase().includes('pendiente'));
+    const pagadas = fines.filter(f => f.estatus.toLowerCase().includes('pagad'));
 
     const totalMonto = fines.reduce((sum, fine) => {
       const monto = parseFloat(fine.monto.replace(/[^0-9.-]/g, '')) || 0;
@@ -97,52 +108,35 @@ class FineService {
       montoPendiente,
     };
   }
-
+  
+  // ... resto de helpers de formato ...
   formatMonto(monto: string): string {
     const amount = parseFloat(monto.replace(/[^0-9.-]/g, '')) || 0;
-    return new Intl.NumberFormat('es-MX', {
-      style: 'currency',
-      currency: 'MXN',
-    }).format(amount);
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amount);
   }
 
   formatDate(fecha: string): string {
     try {
-      const date = new Date(fecha);
-      return date.toLocaleDateString('es-MX', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      });
-    } catch {
-      return fecha;
-    }
+        if(!fecha) return '-';
+        const date = new Date(fecha);
+        return date.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+    } catch { return fecha; }
   }
-
+  
   getStatusColor(estatus: string): string {
-    const statusLower = estatus.toLowerCase();
-
-    if (statusLower.includes('pendiente')) return '#ef4444';
-    if (statusLower.includes('pagad')) return '#10b981';
-
+    if(!estatus) return '#6b7280';
+    const s = estatus.toLowerCase();
+    if (s.includes('pendiente')) return '#ef4444';
+    if (s.includes('pagad')) return '#10b981';
     return '#6b7280';
   }
 
   getStatusBackground(estatus: string): string {
-    const statusLower = estatus.toLowerCase();
-
-    if (statusLower.includes('pendiente')) return '#fee2e2';
-    if (statusLower.includes('pagad')) return '#dcfce7';
-
+    if(!estatus) return '#f3f4f6';
+    const s = estatus.toLowerCase();
+    if (s.includes('pendiente')) return '#fee2e2';
+    if (s.includes('pagad')) return '#dcfce7';
     return '#f3f4f6';
-  }
-
-  isPending(fine: Fine): boolean {
-    return fine.estatus.toLowerCase().includes('pendiente');
-  }
-
-  isPaid(fine: Fine): boolean {
-    return fine.estatus.toLowerCase().includes('pagad');
   }
 }
 
