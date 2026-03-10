@@ -10,7 +10,7 @@ export interface Vehicle {
   longitude: number;
   heading: number;
   location: string;
-  
+  map_icon?: string;
   category?: string;
   isSubordinate?: boolean;
   driverName?: string;

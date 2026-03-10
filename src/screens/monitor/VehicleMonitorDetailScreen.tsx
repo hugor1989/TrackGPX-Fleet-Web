@@ -322,6 +322,11 @@ const ExpenseForm = ({ vehicleId, onClose, onSuccess }: any) => {
     };
 
     const submit = async () => {
+        if(!form.amount || !form.description) {
+            Alert.alert("Campos incompletos", "Por favor ingresa el monto y la descripción.");
+            return;
+        }
+
         setLoading(true);
         const formData = new FormData();
         
@@ -330,15 +335,17 @@ const ExpenseForm = ({ vehicleId, onClose, onSuccess }: any) => {
         formData.append('type', form.type);
         formData.append('amount', form.amount);
         formData.append('description', form.description);
-        if(form.liters) formData.append('liters', form.liters);
-        if(form.pricePerLiter) formData.append('price_per_liter', form.pricePerLiter);
         
-        // MANEJO HÍBRIDO DE ARCHIVO (WEB vs MOBILE)
+        if(form.type === 'FUEL') {
+            if(form.liters) formData.append('liters', form.liters);
+            if(form.pricePerLiter) formData.append('price_per_liter', form.pricePerLiter);
+        }
+        
         if (form.attachment) {
             const isPng = form.attachment.toLowerCase().includes('png');
             const ext = isPng ? 'png' : 'jpg';
             const mimeType = isPng ? 'image/png' : 'image/jpeg';
-            const filename = `ticket-${Date.now()}.${ext}`; // Nombre único
+            const filename = `ticket-${Date.now()}.${ext}`;
 
             if (Platform.OS === 'web') {
                 try {
@@ -360,8 +367,8 @@ const ExpenseForm = ({ vehicleId, onClose, onSuccess }: any) => {
                 visible: true,
                 type: 'success',
                 title: '¡Gasto Guardado!',
-                message: 'El registro y la evidencia se subieron correctamente.',
-                onAction: onSuccess // Cierra todo al confirmar
+                message: 'El registro y la evidencia se suieron correctamente.',
+                onAction: onSuccess 
             });
         } else {
             setPopup({
@@ -380,6 +387,8 @@ const ExpenseForm = ({ vehicleId, onClose, onSuccess }: any) => {
                 <View style={styles.typeRow}>
                     <TouchableOpacity style={[styles.typeOpt, form.type==='FUEL' && styles.typeActive]} onPress={()=>setForm({...form, type:'FUEL'})}><Text style={form.type==='FUEL' && {color:'#fff', fontWeight:'bold'}}>⛽ Combustible</Text></TouchableOpacity>
                     <TouchableOpacity style={[styles.typeOpt, form.type==='MAINTENANCE' && styles.typeActive]} onPress={()=>setForm({...form, type:'MAINTENANCE'})}><Text style={form.type==='MAINTENANCE' && {color:'#fff', fontWeight:'bold'}}>🔧 Taller</Text></TouchableOpacity>
+                    {/* Nueva opción: Otros */}
+                    <TouchableOpacity style={[styles.typeOpt, form.type==='OTHER' && styles.typeActive]} onPress={()=>setForm({...form, type:'OTHER'})}><Text style={form.type==='OTHER' && {color:'#fff', fontWeight:'bold'}}>📁 Otros</Text></TouchableOpacity>
                 </View>
 
                 {form.type === 'FUEL' && (
@@ -396,8 +405,13 @@ const ExpenseForm = ({ vehicleId, onClose, onSuccess }: any) => {
                 <Text style={styles.label}>Monto Total ($)</Text>
                 <TextInput style={[styles.input, {fontSize:20, fontWeight:'bold'}]} value={form.amount} onChangeText={t=>setForm({...form, amount:t})} keyboardType="numeric" placeholder="0.00"/>
 
-                <Text style={styles.label}>Descripción</Text>
-                <TextInput style={styles.input} value={form.description} onChangeText={t=>setForm({...form, description:t})} placeholder="Ej. Carga G500"/>
+                <Text style={styles.label}>{form.type === 'OTHER' ? 'Especificar Gasto (Concepto)' : 'Descripción'}</Text>
+                <TextInput 
+                    style={[styles.input, form.type === 'OTHER' && {borderColor: '#2563eb'}]} 
+                    value={form.description} 
+                    onChangeText={t=>setForm({...form, description:t})} 
+                    placeholder={form.type === 'OTHER' ? "Ej. Pago de seguro, tenencia..." : "Ej. Carga G500"}
+                />
 
                 <TouchableOpacity style={styles.cameraBtn} onPress={pickImage}>
                     {form.attachment ? <Image source={{uri:form.attachment}} style={{width:'100%', height:140, borderRadius:8, resizeMode:'contain'}}/> : 

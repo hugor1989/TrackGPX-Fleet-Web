@@ -11,14 +11,21 @@ interface Props {
     visible: boolean;
     vehicle: Vehicle | null;
     onClose: () => void;
+    onUpdateSuccess: (updatedVehicle: Vehicle) => void;
 }
 
 // Opciones de Iconos (Simuladas)
-const ICONS = ['car-sport', 'bus', 'bicycle', 'boat', 'airplane'];
-
-export default function VehicleConfigModal({ visible, vehicle, onClose }: Props) {
+const ICON_OPTIONS = [
+    { id: 'car-sport', label: 'Sedán', type: 'image' },
+    { id: 'truck', label: 'Carga', type: 'image' },
+    { id: 'bus', label: 'Autobús', type: 'image' },
+    { id: 'motorcycle', label: 'Moto', type: 'image' },
+    { id: 'nave_track', label: 'Nave Track', type: 'image' },
+    { id: 'airplane', label: 'Avión', type: 'image' },
+];
+export default function VehicleConfigModal({ visible, vehicle, onClose, onUpdateSuccess }: Props) {
     const [activeTab, setActiveTab] = useState<'details' | 'commands'>('details');
-    const [selectedIcon, setSelectedIcon] = useState('car-sport');
+    const [selectedIcon, setSelectedIcon] = useState(vehicle?.map_icon || 'car-sport');
 
     if (!vehicle) return null;
 
@@ -98,18 +105,33 @@ export default function VehicleConfigModal({ visible, vehicle, onClose }: Props)
                 </View>
 
                 {/* Selector de Iconos */}
-                <Text style={[styles.label, {marginTop:10}]}>Icono del Mapa:</Text>
-                <View style={styles.iconSelector}>
-                    {ICONS.map(icon => (
-                        <TouchableOpacity 
-                            key={icon} 
-                            style={[styles.iconOption, selectedIcon === icon && styles.iconOptionSelected]}
-                            onPress={() => setSelectedIcon(icon)}
-                        >
-                            <Ionicons name={icon as any} size={24} color={selectedIcon === icon ? '#fff' : '#3b82f6'} />
-                        </TouchableOpacity>
-                    ))}
-                </View>
+                <Text style={[styles.label, {marginTop:15, marginBottom: 8}]}>Icono del Mapa:</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap: 12, paddingBottom: 10}}>
+                        {ICON_OPTIONS.map(icon => (
+                            <TouchableOpacity 
+                                key={icon.id} 
+                                style={[
+                                    styles.iconOption, 
+                                    selectedIcon === icon.id && styles.iconOptionSelected
+                                ]}
+                                onPress={() => setSelectedIcon(icon.id)}
+                            >
+                                <Image 
+                                    source={{ uri: `http://127.0.0.1:8000/assets/icons/map/${icon.id}.png` }} 
+                                    style={[
+                                        styles.iconImage,
+                                        selectedIcon === icon.id && { tintColor: '#fff' } // Opcional: si tus iconos son planos/monocromáticos
+                                    ]}
+                                />
+                                <Text style={[
+                                    styles.iconLabel, 
+                                    selectedIcon === icon.id && { color: '#fff' }
+                                ]}>
+                                    {icon.label}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
             </View>
 
             <View style={{height: 20}} /> 
@@ -117,24 +139,34 @@ export default function VehicleConfigModal({ visible, vehicle, onClose }: Props)
     );
 
     const handleSave = async () => {
-    try {
-        // 1. Llamada a la API Real
-        await vehicleService.updateConfig(vehicle.id, {
-            map_icon: selectedIcon
-        });
+        try {
+            // Creamos el objeto siguiendo la estructura de UpdateVehicleRequest
+            // Si tu interfaz pide otros campos obligatorios, inclúyelos aquí
+            const dataToUpdate = {
+                map_icon: selectedIcon // El valor de tu estado 'selectedIcon' (ej: 'truck')
+            };
 
-        // 2. Avisar al usuario
-        alert('Configuración guardada');
-        
-        // 3. Cerrar y recargar (o actualizar estado local)
-        onClose();
-        // Idealmente aquí deberías disparar una recarga de vehículos en el Dashboard
-        
-    } catch (error) {
-        console.error(error);
-        alert('Error al guardar configuración');
-    }
-};
+            // 1. Llamada a tu API pasando el ID y el objeto
+            const response = await vehicleService.updateVehicle(vehicle.id, dataToUpdate);
+
+            // 2. Avisar al usuario (usando la data que regresa la promesa si es necesario)
+            alert('Configuración guardada correctamente');
+            
+            // 3. Notificar al Dashboard para que el mapa se actualice sin recargar
+            // IMPORTANTE: Asegúrate de que 'onUpdateSuccess' reciba el vehículo actualizado
+            if (onUpdateSuccess) {
+                // Si tu API devuelve { success: true, data: Vehicle }, extrae la data
+                const updatedVehicle = response || response; 
+                onUpdateSuccess(updatedVehicle as any);
+            }
+
+            onClose();
+            
+        } catch (error) {
+            console.error('Error al guardar:', error);
+            alert('Error al guardar configuración');
+        }
+    };
     // --- TAB 2: COMANDOS (Botones) ---
     const renderCommandsTab = () => (
         <ScrollView style={styles.tabContent}>
@@ -249,8 +281,6 @@ const styles = StyleSheet.create({
 
     // Icon Selector
     iconSelector: { flexDirection: 'row', gap: 10, marginTop: 5 },
-    iconOption: { padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' },
-    iconOptionSelected: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
 
     // Grid Comandos
     grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 15, justifyContent:'space-between' },
@@ -264,4 +294,36 @@ const styles = StyleSheet.create({
     cancelBtnText: { color: '#64748b', fontWeight: '600' },
     saveBtn: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 6, backgroundColor: '#3b82f6' },
     saveBtnText: { color: '#fff', fontWeight: '600' },
+
+    iconOption: { 
+    width: 85, 
+    height: 85, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    borderRadius: 15, 
+    borderWidth: 1, 
+    borderColor: '#e2e8f0', 
+    backgroundColor: '#f8fafc',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2
+    },
+    iconOptionSelected: { 
+        backgroundColor: '#3b82f6', 
+        borderColor: '#2563eb' 
+    },
+    iconImage: { 
+        width: 35, 
+        height: 35, 
+        resizeMode: 'contain',
+        marginBottom: 5
+    },
+    iconLabel: { 
+        fontSize: 10, 
+        color: '#64748b', 
+        fontWeight: '700',
+        textAlign: 'center'
+    },
 });

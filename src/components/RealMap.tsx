@@ -146,32 +146,15 @@ export default function RealMap({ vehicles, selectedVehicle, style, onMessage }:
 
             // --- 2. CREADOR DE ICONOS DINÁMICO ---
             function createCarIcon(color, rotation, type) {
-              // Buscar SVG o usar default
-              const pathData = ICON_PATHS[type] || ICON_PATHS['car-sport'];
+              // Escapamos el $ para que React no lo confunda con una variable propia
+              const iconUrl = \`https://backend.track-gpx.com.mx/assets/icons/map/\${type}.png\`;
 
-              return L.divIcon({
-                className: 'vehicle-marker-container',
-                html: \`
-                  <div class="vehicle-icon" style="
-                    transform: rotate(\${rotation}deg);
-                    width: 36px; height: 36px;
-                    display: flex; justify-content: center; align-items: center;
-                    filter: drop-shadow(0px 2px 3px rgba(0,0,0,0.3));
-                  ">
-                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <circle cx="12" cy="12" r="11" fill="white" fill-opacity="0.95" />
-                      <path d="\${pathData}" fill="\${color}" />
-                    </svg>
-                    <div style="position:absolute; top:-4px; width:0; height:0; 
-                         border-left: 4px solid transparent;
-                         border-right: 4px solid transparent;
-                         border-bottom: 6px solid \${color};">
-                    </div>
-                  </div>
-                \`,
-                iconSize: [36, 36],
-                iconAnchor: [18, 18],
-                popupAnchor: [0, -10]
+              return L.icon({
+                iconUrl: iconUrl,
+                iconSize: [42, 42],
+                iconAnchor: [21, 21],
+                popupAnchor: [0, -20],
+                className: 'vehicle-icon-realistic'
               });
             }
 
@@ -217,45 +200,47 @@ export default function RealMap({ vehicles, selectedVehicle, style, onMessage }:
             // --- 4. ACTUALIZAR MARCADORES ---
             function updateMarkers(vehiclesData) {
               vehiclesData.forEach(v => {
-                const lat = v.latitude;
-                const lng = v.longitude;
-                const isMoving = v.status === 'active';
-                const color = isMoving ? '#10b981' : '#ef4444'; // Verde / Rojo
-                const heading = v.heading || 0;
-                
-                // Leemos el tipo de icono desde el objeto del vehículo
-                // Si viene de MockData será 'truck', 'motorcycle', etc.
-                const iconType = (v.deviceInfo && v.deviceInfo.mapIcon) ? v.deviceInfo.mapIcon : 'car-sport';
+                  const lat = v.latitude || v.lat; // Soporte para ambos nombres de campo
+                  const lng = v.longitude || v.lng;
+                  
+                  if (!lat || !lng) return;
 
-                if (markers[v.id]) {
-                  // ACTUALIZAR
-                  const marker = markers[v.id];
-                  marker.setLatLng([lat, lng]);
+                  const isMoving = v.status === 'active';
+                  const color = isMoving ? '#10b981' : '#ef4444';
+                  const heading = v.heading || 0;
                   
-                  // Actualizamos el icono (rotación, color y TIPO)
-                  marker.setIcon(createCarIcon(color, heading, iconType));
-                  
-                  if (marker.getPopup() && marker.getPopup().isOpen()) {
-                     marker.setPopupContent(getPopupContent(v));
+                  // --- LA CORRECCIÓN ESTÁ AQUÍ ---
+                  // Buscamos primero en v.map_icon (lo que guardamos en el modal)
+                  // Luego intentamos en deviceInfo (por compatibilidad con MockData)
+                  // Y si no hay nada, 'car-sport'
+                  const iconType = v.map_icon || (v.deviceInfo && v.deviceInfo.mapIcon) || 'car-sport';
+
+                  if (markers[v.id]) {
+                        const marker = markers[v.id];
+                        marker.setLatLng([lat, lng]);
+                        marker.setIcon(createCarIcon(color, heading, iconType));
+
+                        // Esto asegura que la imagen rote sobre su propio eje
+                        if (marker._icon) {
+                            marker._icon.style.transformOrigin = 'center';
+                            // Concatenamos la rotación al transform existente
+                            marker._icon.style.transform += \` rotate(\${heading}deg)\`;
+                        }
+                    } else {
+                      const marker = L.marker([lat, lng], {
+                          icon: createCarIcon(color, heading, iconType)
+                      }).addTo(map);
+
+                      marker.bindPopup(getPopupContent(v));
+
+                      marker.on('click', () => {
+                          sendMessageToReact({ type: 'MARKER_CLICK', payload: v.id });
+                      });
+
+                      markers[v.id] = marker;
                   }
-
-                } else {
-                  // CREAR
-                  const marker = L.marker([lat, lng], {
-                    icon: createCarIcon(color, heading, iconType)
-                  }).addTo(map);
-
-                  marker.bindPopup(getPopupContent(v));
-
-                  // EVENTO CLICK -> React Native
-                  marker.on('click', () => {
-                     sendMessageToReact({ type: 'MARKER_CLICK', payload: v.id });
-                  });
-
-                  markers[v.id] = marker;
-                }
               });
-            }
+          }
 
             function focusMarker(vehicleId) {
               const marker = markers[vehicleId];

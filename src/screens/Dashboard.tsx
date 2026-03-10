@@ -329,8 +329,24 @@ export default function DashboardPage() {
 
             <VehicleConfigModal     
                 visible={configModalVisible}
-                vehicle={detailedVehicle} // Usa el mismo vehículo seleccionado
+                vehicle={detailedVehicle}
                 onClose={() => setConfigModalVisible(false)}
+                onUpdateSuccess={(updated: any) => { 
+                  setVehicles(current => 
+                      current.map(v => {
+                          if (v.id === updated.id) {
+                              // Aquí el Dashboard dice: 
+                              // "Mantengo tu latitud y velocidad actual (...v), 
+                              // pero te cambio el icono por el nuevo (map_icon)"
+                              return { 
+                                  ...v, 
+                                  map_icon: updated.map_icon 
+                              };
+                          }
+                          return v; // Los demás vehículos se quedan igual
+                      })
+                  );
+              }}
             />
         </View>
       </View>

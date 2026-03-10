@@ -1,23 +1,72 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useState } from 'react'; // Añadimos useState para el feedback de carga
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Share, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Vehicle } from '../api/mockData';
+import sharedLinkService from '../api/sharedLinkService';
+
 
 interface Props {
     vehicle: Vehicle;
     onClose: () => void;
-    onOpenDetails: () => void; // <--- Prop clave para abrir el modal grande
+    onOpenDetails: () => void;
 }
 
 export default function VehicleDetailPanel({ vehicle, onClose, onOpenDetails }: Props) {
     const { deviceInfo } = vehicle;
+    const [sharing, setSharing] = useState(false); // Estado para mostrar carga al generar link
 
-    // Helper para color de estado
     const getAccColor = (status?: string) => status === 'ENCENDIDO' ? '#10b981' : '#ef4444';
+
+    // 🔥 FUNCIÓN PARA GENERAR Y COMPARTIR EL LINK
+    const handleShareLink = async () => {
+        // Validamos que el vehículo tenga un ID válido antes de disparar
+        if (!vehicle || !vehicle.id) {
+            alert('Error: Vehículo no identificado');
+            return;
+        }
+
+        try {
+            setSharing(true);
+            
+            // 1. Llamada al servicio que usa tu apiClient
+            const response = await sharedLinkService.generateLink(vehicle.id, 24);
+
+            /**
+             * OJO AQUÍ: Si tu apiClient devuelve la respuesta completa de Axios, 
+             * el token estará en response.data.token o response.token 
+             * dependiendo de cómo manejes el return en el service.
+             */
+            const token = response.token || response.data?.token;
+
+            if (token) {
+                // Construimos la URL apuntando a la ruta WEB de Laravel (sin /api)
+                const shareUrl = `https://backend.track-gpx.com.mx/track-live/${token}`;
+                
+                if (Platform.OS === 'web') {
+                    // Copiado para navegador (Chrome, Safari, etc.)
+                    await navigator.clipboard.writeText(shareUrl);
+                    alert('🚀 ¡Enlace de rastreo copiado! Ya puedes pegarlo en WhatsApp.');
+                } else {
+                    // Menú nativo para Android/iOS
+                    await Share.share({
+                        message: `📍 Sigue el vehículo ${vehicle.name} de TrackGPX en tiempo real aquí: ${shareUrl}`,
+                        url: shareUrl
+                    });
+                }
+            } else {
+                throw new Error('No se recibió un token válido del servidor');
+            }
+        } catch (error: any) {
+            console.error("Error al compartir:", error);
+            alert(error.message || 'No se pudo generar el enlace. Intenta de nuevo.');
+        } finally {
+            setSharing(false);
+        }
+    };
 
     return (
         <View style={styles.container}>
-            {/* --- HEADER (Nombre y Cerrar) --- */}
+            {/* --- HEADER --- */}
             <View style={styles.header}>
                 <View style={{flexDirection:'row', alignItems:'center', gap:10}}>
                     <View style={styles.iconBox}>
@@ -35,10 +84,8 @@ export default function VehicleDetailPanel({ vehicle, onClose, onOpenDetails }: 
                 </TouchableOpacity>
             </View>
 
-            {/* --- TARJETAS DE ESTADO (Scroll Horizontal) --- */}
+            {/* --- TARJETAS DE ESTADO --- */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsContainer}>
-                
-                {/* 1. ACC (Ignición) */}
                 <View style={styles.statCard}>
                     <View style={styles.cardHeader}>
                         <Text style={styles.label}>ACC (Ignición)</Text>
@@ -49,7 +96,6 @@ export default function VehicleDetailPanel({ vehicle, onClose, onOpenDetails }: 
                     </Text>
                 </View>
 
-                {/* 2. Voltaje */}
                 <View style={styles.statCard}>
                     <View style={styles.cardHeader}>
                         <Text style={styles.label}>Voltaje Batería</Text>
@@ -58,7 +104,6 @@ export default function VehicleDetailPanel({ vehicle, onClose, onOpenDetails }: 
                     <Text style={styles.value}>{deviceInfo?.voltage || '0 V'}</Text>
                 </View>
 
-                {/* 3. Último GPS */}
                 <View style={styles.statCard}>
                     <View style={styles.cardHeader}>
                         <Text style={styles.label}>Último GPS</Text>
@@ -66,20 +111,10 @@ export default function VehicleDetailPanel({ vehicle, onClose, onOpenDetails }: 
                     </View>
                     <Text style={styles.value}>{deviceInfo?.lastGps || '--:--'}</Text>
                 </View>
-                
-                {/* 4. Expiración */}
-                <View style={styles.statCard}>
-                    <View style={styles.cardHeader}>
-                        <Text style={styles.label}>Expiración</Text>
-                        <Ionicons name="calendar" size={14} color="#8b5cf6" />
-                    </View>
-                    <Text style={styles.value}>{deviceInfo?.expiration || '---'}</Text>
-                </View>
             </ScrollView>
             
             {/* --- BOTONES DE ACCIÓN RÁPIDA --- */}
             <View style={styles.actionsRow}>
-                 
                  <TouchableOpacity style={styles.actionBtn}>
                     <View style={[styles.actionIcon, {backgroundColor:'#eff6ff'}]}>
                         <Ionicons name="play-circle" size={22} color="#3b82f6" />
@@ -87,12 +122,23 @@ export default function VehicleDetailPanel({ vehicle, onClose, onOpenDetails }: 
                     <Text style={styles.actionText}>Playback</Text>
                  </TouchableOpacity>
 
-                 {/* ESTE BOTÓN ABRE EL MODAL GRANDE */}
                  <TouchableOpacity style={styles.actionBtn} onPress={onOpenDetails}>
                     <View style={[styles.actionIcon, {backgroundColor:'#eff6ff'}]}>
                         <Ionicons name="document-text" size={22} color="#3b82f6" />
                     </View>
                     <Text style={styles.actionText}>Detalles</Text>
+                 </TouchableOpacity>
+
+                 {/* 👇 NUEVO BOTÓN: COMPARTIR */}
+                 <TouchableOpacity style={styles.actionBtn} onPress={handleShareLink} disabled={sharing}>
+                    <View style={[styles.actionIcon, {backgroundColor:'#f0fdf4'}]}>
+                        {sharing ? (
+                            <ActivityIndicator size="small" color="#16a34a" />
+                        ) : (
+                            <Ionicons name="share-social" size={22} color="#16a34a" />
+                        )}
+                    </View>
+                    <Text style={[styles.actionText, {color:'#16a34a'}]}>Compartir</Text>
                  </TouchableOpacity>
 
                  <TouchableOpacity style={styles.actionBtn}>

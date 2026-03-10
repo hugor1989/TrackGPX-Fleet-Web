@@ -82,6 +82,7 @@ export interface UpdateVehicleRequest {
   type?: string;
   brand?: string;
   model?: string;
+  map_icon?: string;
   year?: number;
   odometer?: number;
   status?: 'active' | 'inactive' | 'maintenance';

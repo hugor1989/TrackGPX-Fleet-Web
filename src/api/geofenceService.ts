@@ -59,6 +59,17 @@ class GeofenceService {
     }
   }
 
+  async updateGeofence(id: number, data: CreateGeofenceRequest): Promise<Geofence> {
+  try {
+    // Petición PUT para actualizar
+    const response = await apiClient.put<{ success: boolean; data: Geofence }>(`/geofences/update/${id}`, data);
+    return response.data; // Retornamos el objeto geocerca actualizado
+  } catch (error: any) {
+    console.error('Error updating geofence:', error);
+    throw new Error(error.response?.data?.message || 'Error al actualizar la geocerca');
+  }
+}
+
   /**
    * Eliminar una geocerca
    */
