@@ -9,7 +9,11 @@ export interface StopRecord {
   duration: string;
   address?: string;
 }
-
+interface UploadResponse {
+  success: boolean;
+  message?: string;
+  data?: any;
+}
 // 2. AGREGA ESTA NUEVA (Describe la respuesta completa del Backend)
 export interface StopsResponse {
   success: boolean;
@@ -67,6 +71,7 @@ export interface FinancialResponse {
   data: ExpenseRecord[];
 }
 class ReportService {
+
   async getStops(vehicleId: number, date: string, minMinutes: number = 5): Promise<StopsResponse[]> {
     const response = await apiClient.get<any>(`/billing/reports/stops`, {
       params: { vehicle_id: vehicleId, date, min_minutes: minMinutes }
@@ -97,11 +102,33 @@ class ReportService {
   }
 
   async getFinancialReport(startDate: string, endDate: string, vehicleId?: string): Promise<FinancialResponse | null> {
-    const params: any = { start_date: startDate, end_date: endDate };
+    const params: any = { start_date: startDate, 
+                          end_date: endDate };
     if (vehicleId) params.vehicle_id = vehicleId;
 
     const response = await apiClient.get<FinancialResponse>('/billing/reports/financial/expenses', { params });
+    console.log("Financial Report Response:", response);
     return response;
+  }
+
+  async createExpenseMultipart(formData: FormData): Promise<UploadResponse> {
+    try {
+      const response = await apiClient.post<UploadResponse>('/billing/reports/financial/expenses', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        transformRequest: (data) => data // No tocar el FormData
+      });
+
+      // 🔍 DEBUG: Ver qué respondió Laravel
+
+      return response;
+    } catch (error: any) {
+      //console.error("❌ Error upload expense:", error);
+      // Extraemos el mensaje de error real de Laravel si existe
+      const serverError = error.response?.data?.error || error.response?.data?.message || "Error de conexión";
+      return { success: false, message: serverError };
+    }
   }
 
   

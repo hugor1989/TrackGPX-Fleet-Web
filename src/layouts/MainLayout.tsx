@@ -8,7 +8,7 @@ interface MainLayoutProps {
   activeMenu?: string; // Para saber qué ítem iluminar
 }
 
-export default function MainLayout({ children, activeMenu = 'Dashboard' }: MainLayoutProps) {
+export default function MainLayout({ children, activeMenu = 'Monitor' }: MainLayoutProps) {
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [currentMenu, setCurrentMenu] = useState(activeMenu);

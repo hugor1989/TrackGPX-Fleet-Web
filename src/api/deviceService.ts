@@ -49,7 +49,7 @@ class DeviceService {
   async getAvailableDevices(): Promise<Device[]> {
     try {
       const response = await apiClient.get<{ success: boolean; data: Device[] }>(
-        '/devices/available'
+        '/billing/devices/available'
       );
       return response.data || response || [];
     } catch (error: any) {

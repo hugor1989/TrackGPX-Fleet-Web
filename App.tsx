@@ -52,6 +52,18 @@ import FinancialReportScreen from './src/screens/reports/FinancialReportScreen.w
 import VehicleListScreen from './src/screens/monitor/VehicleListScreen'; 
 import VehicleMonitorDetailScreen from './src/screens/monitor/VehicleMonitorDetailScreen'; 
 
+import DashboardHome from './src/screens/DashboardHome'; // O la ruta donde guardaste el archivo
+
+import SplashScreen from './src/screens/SplashScreen';
+
+import FinesListScreen from './src/screens/fines/FinesListScreen';
+
+import GroupsScreen from './src/screens/group/GroupsScreen';
+
+import FinesHistoryScreen from './src/screens/fines/FinesHistoryScreen';
+
+import PendingFinesScreen from './src/screens/fines/PendingFinesScreen';
+
 const Stack = createNativeStackNavigator();
 
 // ----------------------------------------------------------------------
@@ -143,11 +155,17 @@ const MainNavigator = () => {
       <Stack.Screen name="Playback" component={PlaybackScreenWeb} />
       <Stack.Screen name="StopsReport" component={StopsReportScreenWeb} />
       <Stack.Screen name="MileageReport" component={MileageReportScreenWeb} />
-      <Stack.Screen name="DriverRanking" component={DriverRankingScreen} />
+      <Stack.Screen name="DriverRanking" component={DriverRankingScreen} /> 
 
       <Stack.Screen name="FinancialReport" component={FinancialReportScreen} />
       <Stack.Screen name="VehicleList" component={VehicleListScreen} />
       <Stack.Screen name="VehicleMonitorDetail" component={VehicleMonitorDetailScreen} />
+      <Stack.Screen name="DashboardHome" component={DashboardHome} />
+      <Stack.Screen name="FinesList" component={FinesListScreen} />
+      <Stack.Screen name="Groups" component={GroupsScreen} />
+
+      <Stack.Screen name="FinesHistory" component={FinesHistoryScreen} />
+      <Stack.Screen name="PendingFines" component={PendingFinesScreen} />
     </Stack.Navigator>
   );
 };
@@ -155,22 +173,26 @@ const MainNavigator = () => {
 // ----------------------------------------------------------------------
 // 4. Componente Controlador de Navegación
 // ----------------------------------------------------------------------
+// En tu App.tsx raíz
 const NavigationWrapper = () => {
   const { user, isSplashLoading } = useAuth();
+  const [minSplashTimePassed, setMinSplashTimePassed] = React.useState(false);
 
-  // Pantalla de carga mientras verificamos el token guardado
-  if (isSplashLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        {/* Puedes poner tu logo aquí */}
-        <ActivityIndicator size="large" color="#226bfc" />
-      </View>
-    );
+  React.useEffect(() => {
+    // CAMBIO AQUÍ: Aumentamos a 6000ms (6 segundos)
+    const timer = setTimeout(() => {
+      setMinSplashTimePassed(true);
+    }, 6000); 
+    
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (isSplashLoading || !minSplashTimePassed) {
+    return <SplashScreen />;
   }
 
   return (
     <NavigationContainer>
-      {/* Si existe usuario, mostramos la App, si no, el Login */}
       {user ? <MainNavigator /> : <AuthNavigator />}
     </NavigationContainer>
   );
