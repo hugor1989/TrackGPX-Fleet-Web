@@ -1,15 +1,19 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, 
-         StyleSheet, Dimensions, Animated, TextInput } 
+         StyleSheet, Dimensions, Animated, TextInput, ActivityIndicator } 
          from 'react-native';
 import { Ionicons } from "@expo/vector-icons";
 
-// IMPORTS CORREGIDOS
+// IMPORTS
 import MainLayout from '../layouts/MainLayout';
 import RealMap from '../components/RealMap';
-// 👇 IMPORTANTE: Importamos todo desde el archivo de datos simulados
-import { Vehicle, INITIAL_VEHICLES, simulateFleetMovement } from '../api/mockData';
-import DashboardAlerts from './DashboardAlerts'; // <--- Importar
+import DashboardAlerts from './DashboardAlerts';
+
+// 👇 IMPORTANTE: Servicio Real + Utilidades de Simulación
+import vehicleService from '../api/vehicleService'; 
+import { Vehicle, simulateFleetMovement, hydrateVehiclesWithMockLocation } from '../api/mockData';
+import VehicleDetailPanel from '../components/VehicleDetailPanel';
+import VehicleConfigModal from '../components/VehicleConfigModal';
 
 // Eliminamos la interfaz Vehicle local para evitar conflictos
 
@@ -24,27 +28,56 @@ type FilterType = 'all' | 'online' | 'offline';
 const { width } = Dimensions.get('window');
 
 export default function DashboardPage() {
-  // ✅ ESTADO: Inicializamos con los datos del mockData
-  const [vehicles, setVehicles] = useState<Vehicle[]>(INITIAL_VEHICLES);
+  // ✅ ESTADO: Iniciamos vacío y agregamos estado de carga
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [loading, setLoading] = useState(true);
   
   const [selectedFilter, setSelectedFilter] = useState<FilterType>('all');
   const [includeSubordinates, setIncludeSubordinates] = useState<boolean>(true);
   const [isPanelCollapsed, setIsPanelCollapsed] = useState<boolean>(false);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [detailedVehicle, setDetailedVehicle] = useState<Vehicle | null>(null);
+  const [configModalVisible, setConfigModalVisible] = useState(false);
   
   // Usamos un Set para las categorías expandidas
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['Demo', 'Logística', 'Ventas']));
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [panelAnimation] = useState(new Animated.Value(1));
 
-  // 🔥 EFECTO DE SIMULACIÓN (El corazón del movimiento)
+  // 🔥 1. CARGA INICIAL DE DATOS REALES (Inyectando ubicación falsa GDL)
   useEffect(() => {
+    const fetchRealData = async () => {
+      try {
+        setLoading(true);
+        // A) Pedimos los datos a Laravel (Tu base de datos real)
+        const realData = await vehicleService.getVehicles();
+        
+        // B) Les inyectamos coordenadas falsas de GDL y propiedades de simulación
+        const mapReadyVehicles = hydrateVehiclesWithMockLocation(realData);
+        
+        // C) Guardamos en el estado para que el mapa los pinte
+        setVehicles(mapReadyVehicles);
+      } catch (error) {
+        console.error("Error cargando vehículos reales:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRealData();
+  }, []);
+
+  // 🔥 2. EFECTO DE SIMULACIÓN (Mueve los vehículos reales en el mapa)
+  useEffect(() => {
+    // Si no hay vehículos o está cargando, no hacemos nada
+    if (vehicles.length === 0) return;
+
     const interval = setInterval(() => {
       setVehicles(currentVehicles => {
-        // 1. Calculamos las nuevas posiciones
+        // Calculamos las nuevas posiciones (pequeño desplazamiento aleatorio)
         const movedVehicles = simulateFleetMovement(currentVehicles);
         
-        // 2. Si tienes un vehículo seleccionado, actualizamos su info para que el mapa lo siga
+        // Si tienes un vehículo seleccionado, actualizamos su info para que el mapa lo siga
         if (selectedVehicle) {
           const updatedSelected = movedVehicles.find(v => v.id === selectedVehicle.id);
           if (updatedSelected) {
@@ -57,7 +90,7 @@ export default function DashboardPage() {
     }, 2000); // Se actualiza cada 2 segundos
 
     return () => clearInterval(interval);
-  }, [selectedVehicle]); // Dependencia crítica: selectedVehicle
+  }, [vehicles.length > 0, selectedVehicle]); // Dependencia crítica
 
   // --- ANIMACIONES DEL PANEL ---
   const togglePanel = useCallback(() => {
@@ -84,7 +117,7 @@ export default function DashboardPage() {
     });
   }, []);
 
-  // --- FILTRADO INTELIGENTE (Adaptado a mockData) ---
+  // --- FILTRADO INTELIGENTE ---
   const filteredVehicles = useMemo(() => {
     let filtered = vehicles;
 
@@ -102,7 +135,7 @@ export default function DashboardPage() {
       filtered = filtered.filter(v => !v.isSubordinate);
     }
 
-    // 3. Filtro por Estado (Usando propiedad 'status' del mock)
+    // 3. Filtro por Estado
     switch (selectedFilter) {
       case 'online':
         filtered = filtered.filter(v => v.status === 'active');
@@ -128,7 +161,6 @@ export default function DashboardPage() {
 
   // --- CONTADORES ---
   const counts = useMemo(() => {
-    // Calculamos sobre el total sin filtrar por texto para los tabs
     const baseList = includeSubordinates ? vehicles : vehicles.filter(v => !v.isSubordinate);
     return {
       total: baseList.length,
@@ -150,12 +182,32 @@ export default function DashboardPage() {
 
   const handleVehiclePress = useCallback((vehicle: Vehicle) => {
     setSelectedVehicle(vehicle);
-    // En pantallas pequeñas, colapsar menú al seleccionar
     if (width < 768) togglePanel();
   }, [togglePanel]);
 
+  const handleMapMessage = (event: any) => {
+    try {
+        // Dependiendo de si es web o nativo, la data viene en event.data o event.nativeEvent.data
+        const dataString = event.nativeEvent?.data || event.data;
+        if (!dataString) return;
+
+        // Si es objeto directo o string
+        const message = typeof dataString === 'string' ? JSON.parse(dataString) : dataString;
+
+        if (message.type === 'MARKER_CLICK') {
+            const vehicleId = message.payload;
+            const found = vehicles.find(v => v.id === vehicleId);
+            if (found) {
+                setDetailedVehicle(found); // <--- ESTO ABRE EL PANEL
+            }
+        }
+    } catch (e) {
+        console.log("Error parseando mensaje del mapa", e);
+    }
+  };
+
   return (
-    <MainLayout activeMenu="Dashboard">
+    <MainLayout activeMenu="Monitor">
       <View style={styles.container}>
         <View style={styles.mainContent}>
           
@@ -164,6 +216,7 @@ export default function DashboardPage() {
             <RealMap 
               vehicles={filteredVehicles} 
               selectedVehicle={selectedVehicle}
+              onMessage={handleMapMessage}
               style={{ flex: 1, width: '100%', height: '100%' }} 
             />
           </View>
@@ -175,8 +228,9 @@ export default function DashboardPage() {
             </TouchableOpacity>
           </Animated.View>
 
-          {/* ✅ AQUI AGREGAS EL PANEL DE ALERTAS */}
-            <DashboardAlerts />
+          {/* PANEL DE ALERTAS */}
+          <DashboardAlerts />
+          
           {/* PANEL LATERAL */}
           <Animated.View style={[styles.sidePanel, { width: panelWidth, opacity: opacity }]}>
             
@@ -198,45 +252,52 @@ export default function DashboardPage() {
             </View>
 
             {/* Lista Scrollable */}
-            <ScrollView style={styles.vehiclesList} showsVerticalScrollIndicator={false}>
-              {Object.entries(groupedVehicles).map(([category, categoryVehicles]) => {
-                const isExpanded = expandedCategories.has(category);
-                const stats = categoryCounts[category];
-                
-                return (
-                  <View key={category} style={styles.categorySection}>
-                    <TouchableOpacity 
-                      style={styles.categoryHeader}
-                      onPress={() => toggleCategory(category)}
-                    >
-                      <View style={styles.categoryHeaderLeft}>
-                        <Ionicons name={isExpanded ? "chevron-down" : "chevron-forward"} size={16} color="#2c3e50" />
-                        <Ionicons name="people-outline" size={18} color="#3498db" style={styles.categoryIcon} />
-                        <Text style={styles.categoryTitle}>
-                          {category} ({stats?.online || 0}/{stats?.total || 0})
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
+            {loading ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="large" color="#3498db" />
+                <Text style={{ marginTop: 10, color: '#7f8c8d' }}>Cargando flota...</Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.vehiclesList} showsVerticalScrollIndicator={false}>
+                {Object.entries(groupedVehicles).map(([category, categoryVehicles]) => {
+                  const isExpanded = expandedCategories.has(category);
+                  const stats = categoryCounts[category];
+                  
+                  return (
+                    <View key={category} style={styles.categorySection}>
+                      <TouchableOpacity 
+                        style={styles.categoryHeader}
+                        onPress={() => toggleCategory(category)}
+                      >
+                        <View style={styles.categoryHeaderLeft}>
+                          <Ionicons name={isExpanded ? "chevron-down" : "chevron-forward"} size={16} color="#2c3e50" />
+                          <Ionicons name="people-outline" size={18} color="#3498db" style={styles.categoryIcon} />
+                          <Text style={styles.categoryTitle}>
+                            {category} ({stats?.online || 0}/{stats?.total || 0})
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
 
-                    {isExpanded && categoryVehicles.map((vehicle) => (
-                      <VehicleItem
-                        key={vehicle.id}
-                        vehicle={vehicle}
-                        isActive={selectedVehicle?.id === vehicle.id}
-                        onPress={handleVehiclePress}
-                      />
-                    ))}
+                      {isExpanded && categoryVehicles.map((vehicle) => (
+                        <VehicleItem
+                          key={vehicle.id}
+                          vehicle={vehicle}
+                          isActive={selectedVehicle?.id === vehicle.id}
+                          onPress={handleVehiclePress}
+                        />
+                      ))}
+                    </View>
+                  );
+                })}
+
+                {Object.keys(groupedVehicles).length === 0 && (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateTitle}>Sin resultados</Text>
+                    <Text style={styles.emptyStateText}>Intenta otra búsqueda</Text>
                   </View>
-                );
-              })}
-
-              {Object.keys(groupedVehicles).length === 0 && (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyStateTitle}>Sin resultados</Text>
-                  <Text style={styles.emptyStateText}>Intenta otra búsqueda</Text>
-                </View>
-              )}
-            </ScrollView>
+                )}
+              </ScrollView>
+            )}
 
             {/* Footer */}
             <View style={styles.panelFooter}>
@@ -257,6 +318,36 @@ export default function DashboardPage() {
             </View>
 
           </Animated.View>
+
+          {detailedVehicle && (
+                <VehicleDetailPanel 
+                    vehicle={detailedVehicle} 
+                    onClose={() => setDetailedVehicle(null)}
+                    onOpenDetails={() => setConfigModalVisible(true)}
+                />
+            )}
+
+            <VehicleConfigModal     
+                visible={configModalVisible}
+                vehicle={detailedVehicle}
+                onClose={() => setConfigModalVisible(false)}
+                onUpdateSuccess={(updated: any) => { 
+                  setVehicles(current => 
+                      current.map(v => {
+                          if (v.id === updated.id) {
+                              // Aquí el Dashboard dice: 
+                              // "Mantengo tu latitud y velocidad actual (...v), 
+                              // pero te cambio el icono por el nuevo (map_icon)"
+                              return { 
+                                  ...v, 
+                                  map_icon: updated.map_icon 
+                              };
+                          }
+                          return v; // Los demás vehículos se quedan igual
+                      })
+                  );
+              }}
+            />
         </View>
       </View>
     </MainLayout>
@@ -278,7 +369,6 @@ const VehicleItem = React.memo(({ vehicle, onPress, isActive }: VehicleItemProps
         <Text style={[styles.vehicleName, isMoving && styles.vehicleNameActive]}>
           {vehicle.name}
         </Text>
-        {/* Mostramos la PLACA real del mockData */}
         <Text style={styles.vehiclePlate}>{vehicle.plate}</Text>
       </View>
       <View style={{ alignItems: 'flex-end' }}>

@@ -7,7 +7,7 @@ import { StorageHelper } from '../utils/storageHelper';
 // ---------------------------------------------------------------------------
 
 // ⚠️ IMPORTANTE: Cambia esta URL por la de tu servidor real cuando despliegues
-const PROD_API_URL = 'https://backend-flotillas.track-gpx.com/api'; 
+const PROD_API_URL = 'https://backend.track-gpx.com.mx/api'; 
 
 const getApiUrl = (): string => {
   // 1. Entorno de Producción
@@ -19,7 +19,7 @@ const getApiUrl = (): string => {
   return Platform.select({
     ios: 'http://127.0.0.1:8000/api',      // Simulador iOS
     android: 'http://10.0.2.2:8000/api',   // Emulador Android
-    web: 'http://127.0.0.1:8000/api',      // Navegador Web
+    web: 'https://backend.track-gpx.com.mx/api',      // Navegador Web
     default: 'http://127.0.0.1:8000/api',
   }) as string;
 };

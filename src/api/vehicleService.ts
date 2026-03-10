@@ -82,6 +82,7 @@ export interface UpdateVehicleRequest {
   type?: string;
   brand?: string;
   model?: string;
+  map_icon?: string;
   year?: number;
   odometer?: number;
   status?: 'active' | 'inactive' | 'maintenance';
@@ -379,6 +380,39 @@ getStatusConfig(status: string) {
     if (!type) return 'Sin especificar';
     const vehicleType = VEHICLE_TYPES.find(t => t.value === type);
     return vehicleType ? vehicleType.label : type;
+  }
+
+  // Función 1: Solo para Póliza
+async updateInsurance(id: number, formData: FormData) {
+    const response = await apiClient.post(`/billing/vehicles/${id}/insurance`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response;
+}
+
+ 
+
+  // 1. Obtener la lista de planes de mantenimiento (Alertas)
+  async getMaintenanceSchedules(id: number) {
+    const response = await apiClient.get(`/billing/vehicles/${id}/schedules`);
+    return response;
+  }
+
+  // 2. Crear un nuevo plan de mantenimiento (Regla del calendario)
+  async createMaintenanceSchedule(id: number, data: { name: string; interval_km: number; last_service_date: string; last_service_odometer: number }) {
+    const response = await apiClient.post(`/billing/vehicles/${id}/schedules`, data);
+    return response;
+  }
+
+  // 3. Registrar Mantenimiento Realizado (Gasto + Reinicio de contador)
+  // OJO: Esta usa FormData porque puede llevar foto del ticket
+  async registerMaintenance(id: number, formData: FormData) {
+    const response = await apiClient.post(`/billing/vehicles/${id}/maintenance`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response;
   }
 }
 

@@ -1,361 +1,234 @@
 import React, { useState, useEffect } from "react";
 import { 
-  View, 
-  Text, 
-  TextInput, 
-  Image, 
-  TouchableOpacity, 
-  Platform, 
-  StyleSheet, 
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  ScrollView
+  View, Text, TextInput, Image, TouchableOpacity, Platform, 
+  StyleSheet, ActivityIndicator, KeyboardAvoidingView, ScrollView, 
+  StatusBar, Dimensions, ImageBackground
 } from "react-native";
-// import { useNavigation } from '@react-navigation/native'; // ❌ Ya no es necesario para ir al Dashboard
-import { useAuth } from '../../context/AuthContext'; // ✅ Usamos el Hook
-import authService from '../../api/authService'; // Solo para leer el email guardado
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient'; 
+import { useAuth } from '../../context/AuthContext';
+import authService from '../../api/authService';
+
+const { width } = Dimensions.get('window');
+const isWideScreen = width > 768; 
+
+// PALETA DE COLORES TRACKGPX
+const COLORS = {
+    primary: '#10b981', // Verde Esmeralda (Logo)
+    dark: '#111827',    // Gris muy oscuro (Casi negro)
+    darkAccent: '#064e3b', // Verde muy oscuro (Para gradiente)
+    text: '#374151',
+    textLight: '#9ca3af',
+    bg: '#ffffff'
+};
 
 export default function LoginScreen() {
-  const { login } = useAuth(); // Obtenemos la función login del contexto global
-  
+  const { login } = useAuth();
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Cargar email guardado si existe (solo al montar)
   useEffect(() => {
     const loadSavedEmail = async () => {
       const savedEmail = await authService.getSavedEmail();
-      if (savedEmail) {
-        setAccount(savedEmail);
-        setRemember(true);
-      }
+      if (savedEmail) { setAccount(savedEmail); setRemember(true); }
     };
     loadSavedEmail();
   }, []);
 
   const handleLogin = async () => {
-    // 1. Limpieza y Validación
     setError("");
-    if (!account || !password) {
-      setError("Por favor ingresa tu cuenta y contraseña");
-      return;
-    }
-
+    if (!account || !password) { setError("Por favor completa los campos."); return; }
     setLoading(true);
-
     try {
-      // 2. Llamada al Contexto (El contexto se encarga de hablar con la API y guardar el token)
-      const result = await login({
-        email: account,
-        password: password,
-        remember: remember,
-      });
-
-      if (!result.success) {
-        // Solo mostramos error si falla. 
-        // Si tiene éxito, el Contexto actualiza el estado 'user' y 
-        // el Navegador (App.tsx) cambiará automáticamente de pantalla.
-        setError(result.message || 'Credenciales incorrectas');
-      }
-      
-    } catch (err) {
-      setError('Ocurrió un error inesperado');
-    } finally {
-      setLoading(false);
-    }
+      const result = await login({ email: account, password, remember });
+      if (!result.success) setError(result.message || 'Credenciales incorrectas');
+    } catch (err) { setError('Error de conexión.'); } finally { setLoading(false); }
   };
 
-  return (
-    // KeyboardAvoidingView ayuda a que el teclado no tape los inputs en móviles
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={{ flex: 1 }}
-    >
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
-        <View style={styles.container}>
-          <Image
-            source={{ uri: "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?auto=format&fit=crop&w=1200&q=80" }}
-            style={styles.backgroundImage}
-            resizeMode="cover"
-            blurRadius={Platform.OS === "web" ? 0 : 3} // Un poco menos de blur se ve mejor a veces
-          />
-
-          {/* Card de Login */}
-          <View style={styles.loginCard}>
-            {/* Logo */}
-            <View style={styles.logoContainer}>
-              {/* Asegúrate de que la ruta sea correcta */}
-              <Image
-                source={require("../../../assets/logo-sin-fondo.png")}
-                style={styles.logoImage}
-              />
-            </View>
-
-            {/* Mensaje de error */}
-            {error ? (
-              <View style={styles.errorContainer}>
-                <Text style={styles.errorIcon}>⚠️</Text>
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            ) : null}
-
-            {/* Inputs */}
-            <View style={styles.inputsContainer}>
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputIcon}>👤</Text>
-                <TextInput
-                  placeholder="Usuario / Correo"
-                  placeholderTextColor="#71717a"
-                  style={styles.input}
-                  value={account}
-                  onChangeText={setAccount}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!loading}
-                />
-              </View>
-              
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputIcon}>🔒</Text>
-                <TextInput
-                  placeholder="Contraseña"
-                  placeholderTextColor="#71717a"
-                  style={styles.input}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!loading}
-                />
-              </View>
-              
-              <View style={styles.rememberContainer}>
-                <TouchableOpacity 
-                  onPress={() => setRemember(!remember)} 
-                  style={styles.rememberButton}
-                  disabled={loading}
-                >
-                  <View style={[styles.checkbox, remember && styles.checkboxChecked]}>
-                    {remember && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={styles.rememberText}>Recordar contraseña</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity disabled={loading}>
-                  <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Botón Login */}
-            <TouchableOpacity 
-              style={[styles.loginButton, loading && styles.loginButtonDisabled]}
-              onPress={handleLogin}
-              disabled={loading}
-              activeOpacity={0.8}
+  // --- SECCIÓN IZQUIERDA (BRANDING OSCURO) ---
+  const LeftBrandingSection = () => (
+      <View style={styles.leftContainer}>
+          {/* Fondo con imagen de mapa sutil o tecnología */}
+          <ImageBackground 
+            source={{uri: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=2070&auto=format&fit=crop'}} // Imagen tech oscura
+            style={styles.bgImage}
+          >
+            {/* Gradiente Oscuro encima */}
+            <LinearGradient
+                colors={[COLORS.dark, 'rgba(6, 78, 59, 0.9)']} // De Negro a Verde Oscuro
+                style={styles.gradientOverlay}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
             >
-              {loading ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={styles.loginButtonText}>INICIAR SESIÓN</Text>
-              )}
-            </TouchableOpacity>
-          </View>
+                <View style={styles.brandingContent}>
+                    <View style={styles.iconCircle}>
+                        <Ionicons name="location" size={40} color={COLORS.primary} />
+                    </View>
+                    <Text style={styles.taglineTitle}>Control Total</Text>
+                    <Text style={styles.taglineMain}>TrackGPX</Text>
+                    <Text style={styles.taglineDesc}>
+                        Gestión inteligente de flotas y rastreo satelital en tiempo real.
+                    </Text>
+                </View>
+            </LinearGradient>
+          </ImageBackground>
+      </View>
+  );
 
-          {/* Footer */}
-          <View style={styles.footer}>
-            <Text style={styles.footerTitle}>TrackGPX | Global Tracking System</Text>
-            <Text style={styles.footerText}>
-              Copyright©2024 All Rights Reserved
-            </Text>
+  return (
+    <View style={styles.mainContainer}>
+      <StatusBar barStyle={isWideScreen ? "light-content" : "dark-content"} backgroundColor={isWideScreen ? COLORS.dark : "#fff"} />
+      
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, flexDirection: isWideScreen ? 'row' : 'column' }}>
+        
+        {isWideScreen && <LeftBrandingSection />}
+
+        {/* LADO DERECHO (Formulario) */}
+        <ScrollView contentContainerStyle={styles.rightContainer} showsVerticalScrollIndicator={false}>
+          <View style={styles.formContent}>
+            
+            {/* Logo */}
+            <View style={styles.logoHeader}>
+                <Image source={require("../../../assets/logo-sin-fondo.png")} style={styles.logoImage} resizeMode="contain" />
+            </View>
+
+            <Text style={styles.welcomeText}>Bienvenido de nuevo</Text>
+            <Text style={styles.instructionText}>Ingresa a tu panel de control</Text>
+
+            {error ? <View style={styles.errorBox}><Text style={styles.errorText}>⚠️ {error}</Text></View> : null}
+
+            {/* Input Usuario */}
+            <View style={styles.inputBox}>
+                <Ionicons name="mail-outline" size={20} color={COLORS.textLight} style={styles.inputIcon} />
+                <TextInput
+                    style={styles.inputField}
+                    placeholder="Usuario o Correo"
+                    placeholderTextColor={COLORS.textLight}
+                    value={account}
+                    onChangeText={setAccount}
+                    autoCapitalize="none"
+                />
+            </View>
+
+            {/* Input Contraseña */}
+            <View style={styles.inputBox}>
+                <Ionicons name="lock-closed-outline" size={20} color={COLORS.textLight} style={styles.inputIcon} />
+                <TextInput
+                    style={styles.inputField}
+                    placeholder="Contraseña"
+                    placeholderTextColor={COLORS.textLight}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                    <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={COLORS.textLight} />
+                </TouchableOpacity>
+            </View>
+
+            {/* Opciones */}
+            <View style={styles.optionsRow}>
+                <TouchableOpacity style={styles.rememberSwitch} onPress={() => setRemember(!remember)} activeOpacity={0.7}>
+                    <View style={[styles.checkbox, remember && styles.checkboxChecked]}>
+                        {remember && <Ionicons name="checkmark" size={14} color="white" />}
+                    </View>
+                    <Text style={styles.optionText}>Recordarme</Text>
+                </TouchableOpacity>
+                <TouchableOpacity>
+                    <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
+                </TouchableOpacity>
+            </View>
+
+            {/* BOTÓN VERDE (COLOR DEL LOGO) */}
+            <TouchableOpacity style={styles.loginBtn} onPress={handleLogin} disabled={loading} activeOpacity={0.8}>
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginBtnText}>INICIAR SESIÓN</Text>}
+            </TouchableOpacity>
+
+            <View style={styles.footerLinks}>
+                <Text style={styles.footerText}>© 2024 TrackGPX System</Text>
+            </View>
+
           </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#101624',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    minHeight: 600, // Para asegurar espacio en pantallas pequeñas
+  mainContainer: { flex: 1, backgroundColor: '#fff' },
+  
+  // --- LADO IZQUIERDO (AJUSTADO) ---
+  leftContainer: { flex: 1, backgroundColor: COLORS.dark },
+  bgImage: { flex: 1, width: '100%', height: '100%' },
+  
+  gradientOverlay: { 
+      flex: 1, 
+      justifyContent: 'center', // Centrado vertical
+      alignItems: 'center',     // Centrado horizontal (NUEVO: Esto despega el contenido del borde)
   },
-  backgroundImage: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    opacity: 0.6,
+  
+  brandingContent: { 
+      maxWidth: 550, // Un poco más de ancho máximo permitido
+      width: '100%', // Ocupa el ancho disponible hasta el máximo
+      paddingHorizontal: 80, // Espacio generoso a los lados (NUEVO: Esto da el "aire")
   },
-  loginCard: {
-    width: '100%',
-    maxWidth: 400, // Un poco más estrecho para elegancia
-    backgroundColor: 'white',
-    borderRadius: 24,
-    paddingTop: 70,
-    paddingBottom: 40,
-    paddingHorizontal: 25,
-    alignItems: 'center',
-    position: 'relative',
-    marginTop: 60, // Espacio para el logo flotante
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
+
+  iconCircle: {
+      width: 70, height: 70, borderRadius: 35,
+      backgroundColor: 'rgba(255,255,255,0.1)',
+      alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+      borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)'
   },
-  logoContainer: {
-    position: 'absolute',
-    width: 110,
-    height: 110,
-    top: -55,
-    alignSelf: 'center',
-    backgroundColor: 'white',
-    borderRadius: 55,
-    borderWidth: 4,
-    borderColor: '#e5e7eb',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 20,
+  taglineTitle: { fontSize: 20, color: COLORS.primary, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase' },
+  // Aumenté un poco el tamaño del texto principal para más impacto
+  taglineMain: { fontSize: 64, color: '#fff', fontWeight: '900', lineHeight: 68, marginBottom: 15 },
+  taglineDesc: { fontSize: 18, color: '#d1d5db', lineHeight: 26, maxWidth: '90%' },
+  // ------------------------------------
+
+  // LADO DERECHO (Sigue igual, pero te lo pongo para referencia)
+  rightContainer: { flexGrow: 1, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', paddingVertical: 40 },
+  formContent: { width: '100%', maxWidth: 400, paddingHorizontal: 30 },
+
+  logoHeader: { alignItems: 'center', marginBottom: 20 },
+  logoImage: { width: 200, height: 120 }, // Ajusta según tu logo real
+
+  welcomeText: { fontSize: 24, fontWeight: 'bold', color: COLORS.text, textAlign: 'center' },
+  instructionText: { fontSize: 14, color: COLORS.textLight, textAlign: 'center', marginBottom: 30 },
+
+  errorBox: { backgroundColor: '#fef2f2', padding: 10, borderRadius: 8, marginBottom: 20, borderWidth: 1, borderColor: '#fee2e2' },
+  errorText: { color: '#b91c1c', fontSize: 13 },
+
+  inputBox: {
+      flexDirection: 'row', alignItems: 'center',
+      borderWidth: 1.5, borderColor: '#f3f4f6', 
+      borderRadius: 12, height: 56,
+      paddingHorizontal: 15, marginBottom: 16,
+      backgroundColor: '#f9fafb',
   },
-  logoImage: {
-    width: 90,
-    height: 90,
-    resizeMode: 'contain',
+  inputIcon: { marginRight: 12 },
+  inputField: { flex: 1, height: '100%', color: COLORS.text, fontSize: 15, fontWeight: '500' },
+
+  optionsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 30, marginTop: 5 },
+  rememberSwitch: { flexDirection: 'row', alignItems: 'center' },
+  checkbox: { width: 20, height: 20, borderWidth: 2, borderColor: '#e5e7eb', borderRadius: 6, marginRight: 8, alignItems: 'center', justifyContent: 'center' },
+  checkboxChecked: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  optionText: { color: COLORS.textLight, fontSize: 14, fontWeight: '500' },
+  forgotText: { color: COLORS.primary, fontSize: 14, fontWeight: '600' },
+
+  loginBtn: {
+      width: '100%', height: 56,
+      backgroundColor: COLORS.primary, // VERDE
+      borderRadius: 12,
+      alignItems: 'center', justifyContent: 'center',
+      shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5
   },
-  errorContainer: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fee2e2',
-    borderLeftWidth: 4,
-    borderLeftColor: '#ef4444',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 15,
-  },
-  errorIcon: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  errorText: {
-    flex: 1,
-    color: '#991b1b',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  inputsContainer: {
-    width: '100%',
-    marginTop: 10,
-  },
-  inputContainer: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    marginBottom: 16,
-    backgroundColor: '#f9fafb',
-    height: 50,
-  },
-  inputIcon: {
-    fontSize: 18,
-    marginRight: 10,
-    opacity: 0.7,
-  },
-  input: {
-    flex: 1,
-    height: '100%',
-    fontSize: 16,
-    color: '#1f2937',
-  },
-  rememberContainer: {
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-    marginTop: 5,
-  },
-  rememberButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderWidth: 2,
-    borderColor: "#226bfc", // Color primario
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  checkboxChecked: {
-    backgroundColor: "#226bfc",
-  },
-  checkmark: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  rememberText: {
-    color: '#4b5563',
-    fontSize: 13,
-  },
-  forgotText: {
-    color: '#226bfc',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  loginButton: {
-    width: '100%',
-    backgroundColor: '#226bfc',
-    borderRadius: 14,
-    height: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#226bfc',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  loginButtonDisabled: {
-    opacity: 0.6,
-  },
-  loginButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-  },
-  footer: {
-    marginTop: 40,
-    alignItems: 'center',
-  },
-  footerTitle: {
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginBottom: 4,
-    fontWeight: '500',
-  },
-  footerText: {
-    fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.4)',
-  },
+  loginBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 },
+
+  footerLinks: { marginTop: 40, alignItems: 'center' },
+  footerText: { color: '#e5e7eb', fontSize: 12 }
 });

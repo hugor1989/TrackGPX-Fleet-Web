@@ -153,12 +153,7 @@ export default function FleetSidebar({
 
   // Menú items para gestión de flotas
   const menuItems: MenuItem[] = useMemo(() => [
-    { 
-      key: "Dashboard", 
-      label: "Dashboard", 
-      icon: "speedometer-outline",
-      iconType: 'Ionicons'
-    },
+    
     { 
       key: "Monitor", 
       label: "Monitor en Vivo", 
@@ -169,7 +164,7 @@ export default function FleetSidebar({
       subItems: [
         { key: "Monitor-Mapa", label: "Mapa Tiempo Real", badge: fleetStats.enMovimiento },
         { key: "Monitor-Lista", label: "Lista de Vehículos", screen: "VehicleList" },
-        { key: "Monitor-Grupos", label: "Grupos y Rutas" },
+        { key: "Monitor-Grupos", label: "Grupos y Flotas", screen: "Groups" },
         // ✅ AQUÍ: Asegúrate de agregar la propiedad 'screen'
         { 
           key: "Monitor-Geocercas", 
@@ -177,6 +172,13 @@ export default function FleetSidebar({
           screen: "GeofencesList" // <--- Esto debe coincidir con el name en App.tsx
         },
       ]
+    },
+    { 
+      key: "Dashboard", 
+      label: "Dashboard", 
+      icon: "speedometer-outline",
+      iconType: 'Ionicons',
+      screen: "DashboardHome"
     },
     { 
       key: "Camaras", 
@@ -247,25 +249,32 @@ export default function FleetSidebar({
         { key: "Facturacion-DatosFiscales", label: "Datos Fiscales", screen: "BillingInfo" },
       ]
     },
-    /* { 
-      key: "Planes", 
-      label: "Planes y Precios", 
-      icon: "pricetags-outline",
-      iconType: 'Ionicons',
-      screen: "PlanList"
-    }, */
     { 
       key: "Multas", 
       label: "Multas y Verificaciones", 
       icon: "alert-circle-outline",
       iconType: 'Ionicons',
-      badge: 2,
+      badge: 2, // Sería ideal conectarlo a fleetStats.multasPendientes en el futuro
       badgeType: 'warning',
       subItems: [
-        
-        { key: "Multas-Consultar", label: "Consultar Multas" },
-        { key: "Multas-Pendientes", label: "Pendientes de Pago", badge: 2 },
-        { key: "Multas-Historial", label: "Historial" },
+        // Redirigimos a la lista para ver el resultado de las consultas
+        { 
+            key: "Multas-Consultar", 
+            label: "Consultar Multas", 
+            screen: "FinesList" 
+        },
+        { 
+            key: "Multas-Pendientes", 
+            label: "Pendientes de Pago", 
+            badge: 2, 
+            screen: "PendingFines" // La pantalla iniciará en la pestaña 'Pendientes'
+        },
+        { 
+            key: "Multas-Historial", 
+            label: "Historial", 
+            screen: "FinesHistory" // El usuario podrá cambiar a la pestaña 'Historial'
+        },
+        // Estos los dejamos sin screen por ahora hasta que hagas esos módulos
         { key: "Multas-Verificacion", label: "Verificación Vehicular" },
         { key: "Multas-Tenencias", label: "Tenencias" },
       ]
