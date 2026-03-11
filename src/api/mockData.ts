@@ -17,6 +17,7 @@ export interface Vehicle {
   contactPhone?: string;
 
   deviceInfo?: {
+    id?: number;
     imei: string;
     model: string;
     sim: string;
@@ -39,64 +40,56 @@ export interface Vehicle {
 const GDL_CENTER = { lat: 20.676667, lng: -103.3475 };
 
 export const hydrateVehiclesWithMockLocation = (realVehicles: any[]): Vehicle[] => {
-  return realVehicles.map((v, index) => {
-    
-    // --- Lógica de coordenadas ---
-    const offsetLat = (Math.random() - 0.5) * 0.08; 
-    const offsetLng = (Math.random() - 0.5) * 0.08;
-    const randomLat = GDL_CENTER.lat + offsetLat;
-    const randomLng = GDL_CENTER.lng + offsetLng;
-    
-    const isActive = Math.random() > 0.3;
+  return realVehicles.map((v) => {
+
+    // ✅ Usar coordenadas reales si existen, si no simular
+    const hasRealLocation = v.latitude && v.longitude;
+    const lat = hasRealLocation ? v.latitude : GDL_CENTER.lat + (Math.random() - 0.5) * 0.08;
+    const lng = hasRealLocation ? v.longitude : GDL_CENTER.lng + (Math.random() - 0.5) * 0.08;
+    const speed = hasRealLocation ? v.speed : 0;
+    const heading = hasRealLocation ? v.heading : Math.floor(Math.random() * 360);
+
+    const isActive = v.device?.is_online ?? false;
     const randomStatus = isActive ? 'active' : 'stopped';
-    const randomSpeed = isActive ? Math.floor(Math.random() * 60) + 10 : 0;
 
     const driverName = v.driver?.account?.name 
                     || v.current_assignment?.driver?.account?.name 
                     || 'No asignado';
-    
-    const driverPhone = v.driver?.phone || '33 0000 0000';
-    
-    // Fechas simuladas
-    const activation = v.device?.activated_at ? v.device.activated_at.split('T')[0] : '2024-01-15';
-    const expiry = '2029-01-15'; 
 
     return {
       id: v.id,
       name: v.name || `Unidad ${v.id}`,
       plate: v.plate || 'SIN-PLACA',
-      category: v.group?.name || 'Sin Asignar', 
+      category: v.group?.name || 'Sin Asignar',
       isSubordinate: true,
       driverName: driverName,
-      contactPhone: driverPhone,
-
-      latitude: randomLat,
-      longitude: randomLng,
-      speed: randomSpeed,
-      heading: Math.floor(Math.random() * 360),
+      contactPhone: v.driver?.phone || 'N/A',
+      
+      latitude: lat,
+      longitude: lng,
+      speed: speed,
+      heading: heading,
       status: randomStatus,
-      location: 'Ubicación Simulada GDL',
+      location: hasRealLocation ? v.last_gps : 'Sin señal',
+      map_icon: v.map_icon || 'car-sport',
 
       deviceInfo: {
+        id: v.device?.id || 0,
         imei: v.device?.imei || 'N/A',
         model: v.device?.model || 'Generic',
-        sim: v.device?.sim_id || '3310203040', 
-        iccid: '8952' + Math.floor(Math.random() * 100000000), 
-        activationDate: activation,
-        platformExpiry: expiry,
-        protocol: v.device?.protocol || 'JT808',
-        voltage: isActive ? '13.8 V' : '12.4 V',
+        sim: v.device?.sim_id || 'N/A',
+        iccid: 'N/A',
+        activationDate: v.device?.activated_at?.split('T')[0] || 'N/A',
+        platformExpiry: 'N/A',
+        protocol: v.device?.protocol || 'GT06',
+        voltage: 'N/A',
         accStatus: isActive ? 'ENCENDIDO' : 'APAGADO',
-        lastGps: new Date().toLocaleTimeString(),
-        expiration: expiry,
-        
-        // ✅ CORRECCIÓN AQUÍ: Se agregó el ": '4G - Estable'" que faltaba
-        signal: isActive ? '4G - Fuerte' : '4G - Estable',
-
-        // Asignación del icono
-        mapIcon: v.map_icon || 'car-sport' 
+        lastGps: v.last_gps || 'Sin señal',
+        expiration: 'N/A',
+        signal: isActive ? '4G - Fuerte' : 'Sin señal',
+        mapIcon: v.map_icon || 'car-sport'
       },
-      
+
       device: { is_online: isActive }
     };
   });
