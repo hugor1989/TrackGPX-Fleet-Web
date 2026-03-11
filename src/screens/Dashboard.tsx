@@ -14,6 +14,8 @@ import vehicleService from '../api/vehicleService';
 import { Vehicle, simulateFleetMovement, hydrateVehiclesWithMockLocation } from '../api/mockData';
 import VehicleDetailPanel from '../components/VehicleDetailPanel';
 import VehicleConfigModal from '../components/VehicleConfigModal';
+import createEchoClient from '../api/echoClient';
+import { StorageHelper } from '../utils/storageHelper';
 
 // Eliminamos la interfaz Vehicle local para evitar conflictos
 
@@ -69,28 +71,61 @@ export default function DashboardPage() {
 
   // 🔥 2. EFECTO DE SIMULACIÓN (Mueve los vehículos reales en el mapa)
   useEffect(() => {
-    // Si no hay vehículos o está cargando, no hacemos nada
     if (vehicles.length === 0) return;
 
-    const interval = setInterval(() => {
-      setVehicles(currentVehicles => {
-        // Calculamos las nuevas posiciones (pequeño desplazamiento aleatorio)
-        const movedVehicles = simulateFleetMovement(currentVehicles);
-        
-        // Si tienes un vehículo seleccionado, actualizamos su info para que el mapa lo siga
-        if (selectedVehicle) {
-          const updatedSelected = movedVehicles.find(v => v.id === selectedVehicle.id);
-          if (updatedSelected) {
-            setSelectedVehicle(updatedSelected);
-          }
-        }
-        
-        return movedVehicles;
-      });
-    }, 2000); // Se actualiza cada 2 segundos
+    let echo: any;
 
-    return () => clearInterval(interval);
-  }, [vehicles.length > 0, selectedVehicle]); // Dependencia crítica
+    const connectEcho = async () => {
+        try {
+            // Obtener company_id del usuario logueado
+            const userData = await StorageHelper.getItem('user_data');
+            const user = userData ? JSON.parse(userData) : null;
+            const companyId = user?.company_id;
+
+            if (!companyId) return;
+
+            echo = await createEchoClient();
+
+            echo.channel(`fleet.${companyId}`)
+                .listen('.position.updated', (data: any) => {
+                    setVehicles(current =>
+                        current.map(v => {
+                            if (v.id !== data.vehicle_id) return v;
+                            return {
+                                ...v,
+                                latitude: data.latitude,
+                                longitude: data.longitude,
+                                speed: Math.round(data.speed),
+                                heading: data.heading,
+                                status: data.speed > 0 ? 'active' : 'stopped',
+                            };
+                        })
+                    );
+
+                    // Actualizar vehículo seleccionado si es el mismo
+                    setSelectedVehicle(current => {
+                        if (!current || current.id !== data.vehicle_id) return current;
+                        return {
+                            ...current,
+                            latitude: data.latitude,
+                            longitude: data.longitude,
+                            speed: Math.round(data.speed),
+                            heading: data.heading,
+                        };
+                    });
+                });
+
+        } catch (e) {
+            console.error('Error conectando Echo:', e);
+        }
+    };
+
+    connectEcho();
+
+    return () => {
+        echo?.disconnect();
+    };
+}, [vehicles.length > 0]);
 
   // --- ANIMACIONES DEL PANEL ---
   const togglePanel = useCallback(() => {
